@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
-ROOT="/home/eric/Documents/workspace"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$ROOT"
-DB="$ROOT/state/cp/doublecolor.db"
+if [ -f "$ROOT/data/traeclaw.sqlite3" ]; then
+  DB="$ROOT/data/traeclaw.sqlite3"
+else
+  DB="$ROOT/state/cp/doublecolor.db"
+fi
 for year in $(seq 2026 -1 2003); do
   start=$(printf "%d001" "$year")
   end=$(printf "%d999" "$year")

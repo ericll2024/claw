@@ -14,6 +14,7 @@ TZ = ZoneInfo("Asia/Shanghai")
 WORKSPACE = "/home/eric/Documents/workspace"
 STATE_DIR = f"{WORKSPACE}/state/mfdb"
 DB_PATH = f"{STATE_DIR}/maskphone_monitor.db"
+CONFIG_PATH = f"{STATE_DIR}/maskphone_monitor_config.json"
 URL = "https://management-api.mfoodapp.com/managers/orgs/maskPhone/_topCount"
 DEFAULT_HEADERS = {
     "accept": "application/json",
@@ -47,23 +48,17 @@ def env(name: str, default: str = "") -> str:
 
 
 def get_token() -> str:
-    manual = env("MFOOD_MASKPHONE_TOKEN")
-    if manual:
-        return manual
-
     from traeclaw.db import AppDatabase
-    from traeclaw.mfood.login import MFoodLogin
     from pathlib import Path
     
     proj_root = Path(os.environ.get("TRAECLAW_PROJECT_ROOT") or Path(__file__).resolve().parents[3])
     db_file = Path(os.environ.get("TRAECLAW_DB_PATH") or (proj_root / "code" / "data" / "traeclaw.sqlite3"))
     
     db = AppDatabase(db_file)
-    login = MFoodLogin(db, proj_root)
-    res = login.get_token()
-    token = str(res.get("token", "")).strip()
+    # 直接从数据库的 settings 表中读取键值为 "mfood.login.token" 的全局设定
+    token = db.get_setting("mfood.login.token", "").strip()
     if not token:
-        raise RuntimeError("token fetch failed: empty token")
+        raise RuntimeError("token fetch failed: empty token in database")
     return token
 
 
@@ -198,7 +193,19 @@ def main() -> int:
     other_using_count = int(data.get("otherUsingCount", 0) or 0)
     focus_used_count = using_count + other_using_count
     occupied = using_count + will_release_count + other_using_count
-    threshold = all_count * 0.8
+
+    threshold_percent = 80
+    if os.path.exists(CONFIG_PATH):
+        try:
+            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+                if isinstance(cfg, dict) and "threshold_percent" in cfg:
+                    threshold_percent = int(cfg["threshold_percent"])
+        except Exception:
+            pass
+
+    threshold_factor = threshold_percent / 100.0
+    threshold = all_count * threshold_factor
     alert = focus_used_count > threshold if all_count > 0 else False
 
     result = {
@@ -213,8 +220,8 @@ def main() -> int:
         "occupiedCount": occupied,
         "threshold": threshold,
         "message": (
-            f"报警: usingCount + otherUsingCount = {focus_used_count}，已超过 allCount 的 80% 阈值 {threshold:.1f}" if alert
-            else f"正常: usingCount + otherUsingCount = {focus_used_count}，未超过 allCount 的 80% 阈值 {threshold:.1f}"
+            f"报警: usingCount + otherUsingCount = {focus_used_count}，已超过 allCount 的 {threshold_factor * 100:.0f}% 阈值 {threshold:.1f}" if alert
+            else f"正常: usingCount + otherUsingCount = {focus_used_count}，未超过 allCount 的 {threshold_factor * 100:.0f}% 阈值 {threshold:.1f}"
         ),
         "raw": data,
     }

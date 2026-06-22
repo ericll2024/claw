@@ -41,5 +41,7 @@ MANIFEST
 data/
 state/
 code/data/
+tmp/
 **/cache.json
 **/defaults.json
+

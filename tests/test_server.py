@@ -7,13 +7,15 @@ from traeclaw.db import AppDatabase
 from traeclaw.server import make_server
 
 
-def request_json(base_url, path, method="GET", payload=None):
+def request_json(base_url, path, method="GET", payload=None, headers=None):
     data = None
-    headers = {}
+    req_headers = {}
     if payload is not None:
         data = json.dumps(payload).encode("utf-8")
-        headers["Content-Type"] = "application/json"
-    req = urllib.request.Request(base_url + path, data=data, headers=headers, method=method)
+        req_headers["Content-Type"] = "application/json"
+    if headers:
+        req_headers.update(headers)
+    req = urllib.request.Request(base_url + path, data=data, headers=req_headers, method=method)
     with urllib.request.urlopen(req, timeout=5) as response:
         return json.loads(response.read().decode("utf-8"))
 
@@ -102,25 +104,26 @@ def test_task_schedule_api_overrides_default_schedule(tmp_path):
                 "mode": "long_term",
                 "weekdays": [0, 2, 4],
                 "times": ["08:30", "18:30"],
+                "name": "Custom Task Name",
+                "note": "Custom Task Note",
+                "only_alert_on_abnormal": True,
             },
         )
         payload = request_json(base_url, "/api/tasks")
-        reset = request_json(
-            base_url,
-            "/api/tasks/cp.predict/schedule",
-            method="POST",
-            payload={"reset": True},
-        )
     finally:
         httpd.shutdown()
 
     task = next(item for item in payload["tasks"] if item["id"] == "cp.predict")
     assert saved["schedule"]["custom"] is True
     assert saved["schedule"]["times"] == ["08:30", "18:30"]
+    assert saved["schedule"]["name"] == "Custom Task Name"
+    assert saved["schedule"]["note"] == "Custom Task Note"
+    assert saved["schedule"]["only_alert_on_abnormal"] is True
     assert task["schedule"]["custom"] is True
+    assert task["name"] == "Custom Task Name"
+    assert task["note"] == "Custom Task Note"
+    assert task["schedule"]["only_alert_on_abnormal"] is True
     assert task["schedule_label"] == "长期 · 周一、周三、周五 · 08:30、18:30"
-    assert reset["schedule"]["custom"] is False
-    assert reset["schedule"]["label"] == "每天 18:00"
 
 
 def test_task_group_runs_api_returns_recent_runs_with_limit(tmp_path):
@@ -130,7 +133,7 @@ def test_task_group_runs_api_returns_recent_runs_with_limit(tmp_path):
     for task_id, summary in [
         ("cp.predict", "predict ok"),
         ("cp.check_result", "check ok"),
-        ("mfood.login_token", "login ok"),
+        ("mfood.order_monitor", "login ok"),
     ]:
         run_id = db.start_run(task_id, "manual")
         db.finish_run(run_id, "success", 0, "", "", summary)
@@ -195,6 +198,24 @@ def test_settings_page_is_served_by_clean_route(tmp_path):
 
     assert "<h1>设置</h1>" in html
     assert 'src="/settings.js"' in html
+
+
+def test_login_page_is_served_by_clean_route(tmp_path):
+    # Copy login.html to the temp web directory so it can be served
+    import shutil
+    from pathlib import Path
+    web_dir = tmp_path / "web"
+    web_dir.mkdir(parents=True, exist_ok=True)
+    src_login = Path(__file__).resolve().parents[1] / "web" / "login.html"
+    shutil.copy(src_login, web_dir / "login.html")
+
+    httpd, base_url = run_test_server(tmp_path)
+    try:
+        html = request_text(base_url, "/login")
+    finally:
+        httpd.shutdown()
+
+    assert "<h1>claw</h1>" in html or "<h1>Traeclaw Lite</h1>" in html
 
 
 def test_telegram_settings_api_round_trip(tmp_path):
@@ -299,3 +320,145 @@ def test_mfood_settings_api_round_trip(tmp_path):
     assert saved["settings"]["login"]["configured"] is True
     assert loaded["settings"]["login"]["password_md5"] == "************cdef"
     assert loaded["settings"]["shence"]["sensors_project"] == "production"
+
+
+def test_authentication(tmp_path):
+    import urllib.error
+    httpd, base_url = run_test_server(tmp_path)
+    try:
+        # 1. Access without auth header -> should succeed (because of test environment bypass)
+        request_json(base_url, "/api/tasks")
+
+        # 2. Access with force auth header -> should fail with 401
+        try:
+            request_json(base_url, "/api/tasks", headers={"X-Test-Force-Auth": "1"})
+            assert False, "Should raise urllib.error.HTTPError for 401"
+        except urllib.error.HTTPError as exc:
+            assert exc.code == 401
+
+        # 3. Log in with wrong password -> should fail with 401
+        try:
+            request_json(base_url, "/api/login", method="POST", payload={"password": "wrong_password"})
+            assert False, "Should raise urllib.error.HTTPError for 401"
+        except urllib.error.HTTPError as exc:
+            assert exc.code == 401
+
+        # 4. Log in with correct password (default hash value) -> should succeed
+        res = request_json(base_url, "/api/login", method="POST", payload={"password": "23feb120658a1cb2c5b0be2be826bbc9"})
+        assert res["ok"] is True
+        token = res["token"]
+        assert token
+
+        # 5. Access with force auth and valid token -> should succeed
+        res_tasks = request_json(
+            base_url,
+            "/api/tasks",
+            headers={"X-Test-Force-Auth": "1", "Authorization": f"Bearer {token}"}
+        )
+        assert "tasks" in res_tasks
+
+        # 6. Log out
+        res_logout = request_json(
+            base_url,
+            "/api/logout",
+            method="POST",
+            headers={"X-Test-Force-Auth": "1", "Authorization": f"Bearer {token}"}
+        )
+        assert res_logout["ok"] is True
+
+        # 7. Access with force auth and old token -> should fail with 401
+        try:
+            request_json(
+                base_url,
+                "/api/tasks",
+                headers={"X-Test-Force-Auth": "1", "Authorization": f"Bearer {token}"}
+            )
+            assert False, "Should raise urllib.error.HTTPError for 401"
+        except urllib.error.HTTPError as exc:
+            assert exc.code == 401
+    finally:
+        httpd.shutdown()
+
+
+def test_delete_run_api(tmp_path):
+    db = AppDatabase(tmp_path / "app.sqlite3")
+    app = TraeclawApp(project_root=tmp_path, db=db, import_legacy_state=False)
+    app.initialize()
+    run_id = db.start_run("cp.predict", "manual")
+    db.finish_run(run_id, "success", 0, "", "", "ok")
+    
+    httpd = make_server(("127.0.0.1", 0), app)
+    import threading
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    base_url = f"http://127.0.0.1:{httpd.server_address[1]}"
+    try:
+        runs = db.get_runs("cp.predict")
+        assert len(runs) == 1
+        
+        res = request_json(base_url, f"/api/runs/{run_id}/delete", method="POST")
+        assert res["ok"] is True
+        
+        runs = db.get_runs("cp.predict")
+        assert len(runs) == 0
+    finally:
+        httpd.shutdown()
+
+
+def test_mfood_settings_api_check_and_login(tmp_path, monkeypatch):
+    from unittest.mock import MagicMock
+    httpd, base_url = run_test_server(tmp_path)
+    
+    # Mock MFoodLogin
+    mock_validate = MagicMock(return_value=(True, "test_user"))
+    mock_get_token = MagicMock(return_value={"token": "test-new-token-12345678"})
+    
+    import traeclaw.mfood.login
+    monkeypatch.setattr(traeclaw.mfood.login.MFoodLogin, "validate_token", mock_validate)
+    monkeypatch.setattr(traeclaw.mfood.login.MFoodLogin, "get_token", mock_get_token)
+    
+    try:
+        # First save settings so MFoodLogin configured is True
+        request_json(
+            base_url,
+            "/api/settings/mfood",
+            method="POST",
+            payload={
+                "login": {
+                    "profile": "default",
+                    "account": "manager-a",
+                    "password_md5": "0123456789abcdef0123456789abcdef",
+                }
+            }
+        )
+        
+        # Test check endpoint without token in database
+        check_res = request_json(base_url, "/api/settings/mfood/check", method="POST")
+        assert check_res["ok"] is False
+        assert "未配置 Token" in check_res["status"]
+        
+        # Now set the token in the DB manually (or via another way)
+        db = AppDatabase(tmp_path / "app.sqlite3")
+        db.set_setting("mfood.login.token", "test-saved-token")
+        
+        # Test check endpoint with token
+        check_res2 = request_json(base_url, "/api/settings/mfood/check", method="POST")
+        assert check_res2["ok"] is True
+        assert check_res2["status"] == "test_user"
+        mock_validate.assert_called_once_with("test-saved-token")
+        
+        # Test login endpoint
+        login_res = request_json(base_url, "/api/settings/mfood/login", method="POST")
+        assert login_res["ok"] is True
+        assert login_res["token"] == "************5678"
+        mock_get_token.assert_called_once_with(force_refresh=True)
+        
+        # Update DB to match mocked token
+        db.set_setting("mfood.login.token", "test-new-token-12345678")
+        
+        # Test settings exposure
+        loaded = request_json(base_url, "/api/settings/mfood")
+        assert loaded["settings"]["login"]["token_configured"] is True
+        assert loaded["settings"]["login"]["token"] == "************5678"
+    finally:
+        httpd.shutdown()

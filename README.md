@@ -1,4 +1,4 @@
-# Traeclaw Lite
+# claw
 
 本地轻量任务面板，代码全部放在 `code/` 下。
 
@@ -17,8 +17,6 @@ python3 code/run.py init-db
 python3 code/run.py import-state
 python3 code/run.py run-task cp.predict
 python3 code/run.py run-task cp.check_result
-python3 code/run.py run-task mfood.login_token
-python3 code/run.py run-task mfood.shence_health
 python3 code/run.py run-task mfood.order_monitor
 python3 -m pytest code/tests -q
 ```
@@ -39,7 +37,7 @@ python3 -m pytest code/tests -q
 这三个本地 skill 已迁移成项目代码：
 
 - `code/traeclaw/mfood/login.py`：mFood manager token 获取/刷新，底层浏览器请求脚本 vendored 在 `code/traeclaw/mfood/vendor/get_mfood_token.js`
-- `code/traeclaw/mfood/shence.py`：mFood Sensors SQL 查询
+- `code/traeclaw/mfood/shence.py`：神策查询模块（供订单对账使用）
 - `code/traeclaw/mfood/order_monitor.py`：mFood Sensors 与管理后台完成订单对账
 
 对应配置在网页右侧的 `mFood` 面板填写，保存到统一 SQLite。密钥类字段留空会保留已有值。

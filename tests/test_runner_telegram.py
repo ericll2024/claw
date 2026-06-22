@@ -174,3 +174,121 @@ def test_task_runner_config_sync(tmp_path):
     assert updated_content == '{"groups": [123, 456, 789]}'
 
 
+def test_only_alert_on_abnormal(tmp_path, monkeypatch):
+    from unittest.mock import MagicMock
+    from traeclaw.telegram import TelegramConfig, TelegramNotifier
+
+    db = AppDatabase(tmp_path / "app.sqlite3")
+    db.initialize()
+
+    # 1. Setup global Telegram config
+    TelegramConfig.save(db, enabled=True, bot_token="global-bot-token", chat_id="global-chat-id")
+
+    task = TaskDefinition(
+        id="test.alert_check",
+        name="Alert Check Task",
+        group="test",
+        description="",
+        schedule_label="手动触发",
+        command=["python3", "-c", "print('output text')"],
+    )
+
+    mock_send = MagicMock()
+    monkeypatch.setattr(TelegramNotifier, "send_message", mock_send)
+
+    # Test Case 1: only_alert_on_abnormal is True (default), and task has no alert (success with normal text).
+    # Expected: No Telegram message sent.
+    db.set_setting(f"task.{task.id}.schedule", json.dumps({"only_alert_on_abnormal": True, "weekdays": [0,1,2,3,4,5,6], "times": ["12:00"], "mode": "long_term"}))
+    result = TaskRunner(db, project_root=tmp_path).run(task, trigger_type="schedule")
+    assert result["status"] == "success"
+    assert result["notify_status"] == "skipped"
+    mock_send.assert_not_called()
+
+    # Test Case 2: only_alert_on_abnormal is True (default), but task has an alert (e.g. text contains "异常").
+    # Expected: Telegram message sent.
+    mock_send.reset_mock()
+    task_alert = TaskDefinition(
+        id="test.alert_check",
+        name="Alert Check Task",
+        group="test",
+        description="",
+        schedule_label="手动触发",
+        command=["python3", "-c", "print('发生异常了')"],
+    )
+    result = TaskRunner(db, project_root=tmp_path).run(task_alert, trigger_type="schedule")
+    assert result["status"] == "success"
+    assert result["notify_status"] == "sent"
+    mock_send.assert_called_once()
+
+    # Test Case 3: only_alert_on_abnormal is False, and task has no alert.
+    # Expected: Telegram message sent.
+    mock_send.reset_mock()
+    db.set_setting(f"task.{task.id}.schedule", json.dumps({"only_alert_on_abnormal": False, "weekdays": [0,1,2,3,4,5,6], "times": ["12:00"], "mode": "long_term"}))
+    result = TaskRunner(db, project_root=tmp_path).run(task, trigger_type="schedule")
+    assert result["status"] == "success"
+    assert result["notify_status"] == "sent"
+    mock_send.assert_called_once()
+
+
+def test_mfood_maskphone_monitor_only_alert_on_threshold(tmp_path, monkeypatch):
+    from unittest.mock import MagicMock
+    from traeclaw.telegram import TelegramConfig, TelegramNotifier
+
+    db = AppDatabase(tmp_path / "app.sqlite3")
+    db.initialize()
+
+    # Setup Telegram config
+    TelegramConfig.save(db, enabled=True, bot_token="global-bot-token", chat_id="global-chat-id")
+
+    task = TaskDefinition(
+        id="mfood.maskphone_monitor",
+        name="mFood 隐私号监控",
+        group="mFood",
+        description="",
+        schedule_label="手动触发",
+        command=["python3", "-c", "import json; print(json.dumps({'status': 'alert', 'message': '报警'}))"],
+    )
+
+    mock_send = MagicMock()
+    monkeypatch.setattr(TelegramNotifier, "send_message", mock_send)
+
+    # 1. Exceeds threshold (status='alert') -> notify
+    runner = TaskRunner(db, project_root=tmp_path)
+    result = runner.run(task, trigger_type="schedule")
+    assert result["status"] == "success"
+    assert result["notify_status"] == "sent"
+    mock_send.assert_called_once()
+
+    # 2. Does not exceed threshold (status='ok') -> skip
+    mock_send.reset_mock()
+    task_ok = TaskDefinition(
+        id="mfood.maskphone_monitor",
+        name="mFood 隐私号监控",
+        group="mFood",
+        description="",
+        schedule_label="手动触发",
+        command=["python3", "-c", "import json; print(json.dumps({'status': 'ok', 'message': '正常'}))"],
+    )
+    result = runner.run(task_ok, trigger_type="schedule")
+    assert result["status"] == "success"
+    assert result["notify_status"] == "skipped"
+    mock_send.assert_not_called()
+
+    # 3. Failed command -> skip (since it's not a threshold exceed event)
+    mock_send.reset_mock()
+    task_fail = TaskDefinition(
+        id="mfood.maskphone_monitor",
+        name="mFood 隐私号监控",
+        group="mFood",
+        description="",
+        schedule_label="手动触发",
+        command=["python3", "-c", "import sys; sys.exit(1)"],
+    )
+    result = runner.run(task_fail, trigger_type="schedule")
+    assert result["status"] == "failed"
+    assert result["notify_status"] == "skipped"
+    mock_send.assert_not_called()
+
+
+
+

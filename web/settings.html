@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>设置 - Traeclaw Lite</title>
+    <title>设置 - claw</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
@@ -14,6 +14,7 @@
       </div>
       <div class="topbar-actions">
         <a class="button" href="/">返回看板</a>
+        <button id="logoutBtn" class="button secondary">退出登录</button>
       </div>
     </header>
 
@@ -59,14 +60,22 @@
               <span>Password MD5</span>
               <input id="mfoodLoginPasswordMd5" type="password" autocomplete="off" placeholder="留空则保留现有值" />
             </label>
-            <div style="margin-top: 8px; font-size: 13px; display: flex; align-items: center; gap: 8px;">
-              <span>Token 状态：</span>
-              <span id="mfoodTokenStatus" style="font-weight: 600; color: var(--muted);">加载中...</span>
+            <div class="mfood-token-status" style="margin-top: 12px; font-size: 13px; display: flex; flex-direction: column; gap: 6px;">
+              <div>
+                <span>登录状态：</span>
+                <span id="mfoodLoginStatusBadge" class="badge">未登录</span>
+                <span style="margin-left: 12px;">Token状态：</span>
+                <span id="mfoodTokenStatusBadge" class="badge">未检测</span>
+              </div>
+              <div id="mfoodTokenInfo" style="color: var(--muted); font-size: 12px; display: none;">
+                当前 Token: <code id="mfoodCurrentToken" style="background: var(--bg); padding: 2px 6px; border-radius: 4px; font-family: monospace;"></code>
+              </div>
             </div>
           </div>
-          <div class="form-actions" style="gap: 8px;">
+          <div class="form-actions" style="display: flex; gap: 8px;">
             <button class="button primary" type="submit">保存登录配置</button>
-            <button id="mfoodLoginBtn" class="button" type="button" style="background-color: var(--blue); color: #fff; border-color: var(--blue);">立即登录 / 刷新 Token</button>
+            <button id="checkMFoodTokenBtn" class="button" type="button">检查 Token</button>
+            <button id="loginMFoodBtn" class="button" type="button">手动登录</button>
           </div>
         </form>
 
@@ -103,7 +112,7 @@
               <input id="mfoodTakeoutThreshold" type="text" autocomplete="off" />
             </label>
             <label>
-              <span>超時閾值</span>
+              <span>超市閥值</span>
               <input id="mfoodMarketThreshold" type="text" autocomplete="off" />
             </label>
           </div>

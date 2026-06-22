@@ -108,6 +108,16 @@ class AppDatabase:
                     ON telegram_updates(chat_id, received_at DESC);
                 """
             )
+            # Check if login.password_md5 exists, if not set it
+            row = conn.execute("SELECT 1 FROM settings WHERE key = 'login.password_md5'").fetchone()
+            if not row:
+                conn.execute(
+                    """
+                    INSERT INTO settings (key, value, is_secret, updated_at)
+                    VALUES ('login.password_md5', '23feb120658a1cb2c5b0be2be826bbc9', 1, ?)
+                    """,
+                    (utc_now(),),
+                )
 
     def set_setting(self, key: str, value: str, is_secret: bool = False) -> None:
         with self.connect() as conn:
@@ -206,6 +216,20 @@ class AppDatabase:
                     (task_id, run_id, json.dumps(result_payload, ensure_ascii=False), finished_at),
                 )
 
+    def cleanup_stuck_runs(self) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                """
+                UPDATE task_runs
+                SET status = 'failed',
+                    finished_at = ?,
+                    summary = '服务器重启，任务被动中断',
+                    stderr = 'Task interrupted due to server restart.'
+                WHERE status = 'running'
+                """,
+                (utc_now(),),
+            )
+
     def get_latest_run(self, task_id: str) -> dict[str, Any] | None:
         with self.connect() as conn:
             row = conn.execute(
@@ -227,7 +251,7 @@ class AppDatabase:
             ).fetchall()
         return [dict(row) for row in rows]
 
-    def get_runs_for_task_ids(self, task_ids: list[str], limit: int | None = 10) -> list[dict[str, Any]]:
+    def get_runs_for_task_ids(self, task_ids: list[str], limit: int | None = 10, offset: int | None = None) -> list[dict[str, Any]]:
         if not task_ids:
             return []
         placeholders = ", ".join("?" for _ in task_ids)
@@ -236,6 +260,9 @@ class AppDatabase:
         if limit is not None:
             limit_clause = "LIMIT ?"
             params.append(limit)
+            if offset is not None:
+                limit_clause += " OFFSET ?"
+                params.append(offset)
         with self.connect() as conn:
             rows = conn.execute(
                 f"""
@@ -247,6 +274,11 @@ class AppDatabase:
                 params,
             ).fetchall()
         return [dict(row) for row in rows]
+
+    def delete_run(self, run_id: int) -> None:
+        with self.connect() as conn:
+            conn.execute("DELETE FROM task_results WHERE run_id = ?", (run_id,))
+            conn.execute("DELETE FROM task_runs WHERE id = ?", (run_id,))
 
     def get_task_results(self, task_id: str, limit: int = 10) -> list[dict[str, Any]]:
         with self.connect() as conn:

@@ -2,19 +2,39 @@
 
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 
-let chromium;
-try {
-  ({ chromium } = require('playwright'));
-} catch (error) {
-  try {
-    ({ chromium } = require('/home/eric/Documents/workspace/.tmp/fbprobe/node_modules/playwright'));
-  } catch (_) {
-    console.error('[blocked] Missing dependency: playwright');
-    console.error('Expected local module at /home/eric/Documents/workspace/.tmp/fbprobe/node_modules/playwright');
-    process.exit(2);
+function requirePlaywright() {
+  const candidates = [
+    'playwright',
+    path.join(
+      os.homedir(),
+      '.cache',
+      'codex-runtimes',
+      'codex-primary-runtime',
+      'dependencies',
+      'node',
+      'node_modules',
+      'playwright'
+    ),
+    '/home/eric/Documents/workspace/.tmp/fbprobe/node_modules/playwright'
+  ];
+
+  let lastError;
+  for (const candidate of candidates) {
+    try {
+      return require(candidate);
+    } catch (error) {
+      lastError = error;
+    }
   }
+
+  console.error('[blocked] Missing dependency: playwright');
+  console.error(`Unable to load playwright. Last error: ${lastError && lastError.message}`);
+  process.exit(2);
 }
+
+const { chromium } = requirePlaywright();
 
 const TZ = 'Asia/Shanghai';
 const DEFAULT_GROUPS = [
@@ -22,9 +42,13 @@ const DEFAULT_GROUPS = [
   'https://www.facebook.com/groups/982872103263383/',
   'https://www.facebook.com/groups/644345363776357'
 ];
-const DEFAULT_STATE_FILE = '/home/eric/Documents/workspace/state/facebook/fb_storage_state.json';
-const DEFAULT_OUTPUT_DIR = '/home/eric/Documents/workspace/tmp/fb_yesterday_summary';
-const DEFAULT_CHROME = '/usr/bin/google-chrome-stable';
+
+const PROJECT_ROOT = process.env.TRAECLAW_PROJECT_ROOT || path.resolve(__dirname, '../../..');
+const DEFAULT_STATE_FILE = path.join(PROJECT_ROOT, 'code/state/facebook/fb_storage_state.json');
+const DEFAULT_OUTPUT_DIR = path.join(PROJECT_ROOT, 'code/tmp/fb_yesterday_summary');
+const DEFAULT_CHROME = os.platform() === 'darwin'
+  ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+  : '/usr/bin/google-chrome-stable';
 
 function parseArgs(argv) {
   const args = {
@@ -384,31 +408,52 @@ async function main() {
   ensureDir(args.outputDir);
   ensureDir(path.dirname(args.stateFile));
 
-  const browser = await chromium.launch({
-    headless: !args.headed,
-    executablePath: args.chromePath,
-    args: [
-      '--disable-blink-features=AutomationControlled',
-      '--no-first-run',
-      '--disable-dev-shm-usage'
-    ],
-  });
+  let browser;
+  let context;
+  let page;
+  let isCDP = false;
 
-  const context = await browser.newContext(getContextOptions(args));
+  try {
+    const cdpCheck = await fetch('http://127.0.0.1:9222/json/version', { signal: AbortSignal.timeout(1000) });
+    if (cdpCheck.ok) {
+      console.log('檢測到已運行的 Chrome (Port 9222)，正在連接並使用現有瀏覽器會話...');
+      browser = await chromium.connectOverCDP('http://127.0.0.1:9222');
+      context = browser.contexts()[0];
+      page = await context.newPage();
+      isCDP = true;
+    }
+  } catch (e) {
+    // Port 9222 not open or connection refused, fallback to launching new browser
+  }
+
+  if (!isCDP) {
+    browser = await chromium.launch({
+      headless: !args.headed,
+      executablePath: args.chromePath,
+      args: [
+        '--disable-blink-features=AutomationControlled',
+        '--no-first-run',
+        '--disable-dev-shm-usage'
+      ],
+    });
+    context = await browser.newContext(getContextOptions(args));
+    page = await context.newPage();
+  }
 
   try {
     context.setDefaultNavigationTimeout(args.requestTimeoutMs);
     context.setDefaultTimeout(args.requestTimeoutMs);
-    const page = await context.newPage();
 
-    if (args.login) {
-      await waitForManualLogin(page);
-      await context.storageState({ path: args.stateFile });
-      console.log(`已保存登入態到：${args.stateFile}`);
-    } else if (args.stateFile && !fs.existsSync(args.stateFile)) {
-      console.error(`[blocked] 尚未找到登入態文件：${args.stateFile}`);
-      console.error('先執行一次：fb_yesterday_summary.sh --login');
-      process.exit(2);
+    if (!isCDP) {
+      if (args.login) {
+        await waitForManualLogin(page);
+        await context.storageState({ path: args.stateFile });
+        console.log(`已保存登入態到：${args.stateFile}`);
+      } else if (args.stateFile && !fs.existsSync(args.stateFile)) {
+        console.error(`[blocked] 尚未找到登入態文件：${args.stateFile}`);
+        console.error('先執行一次：fb_yesterday_summary.sh --login');
+        process.exit(2);
+      }
     }
 
     const result = {
@@ -449,8 +494,19 @@ async function main() {
       console.log(markdown);
     }
   } finally {
-    await context.close();
-    await browser.close();
+    if (isCDP) {
+      if (page) {
+        await page.close();
+      }
+      await browser.disconnect();
+    } else {
+      if (context) {
+        await context.close();
+      }
+      if (browser) {
+        await browser.close();
+      }
+    }
   }
 }
 

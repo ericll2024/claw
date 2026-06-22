@@ -32,6 +32,7 @@ def default_schedule(task: TaskDefinition) -> dict[str, Any]:
         "label": task.schedule_label,
         "default_label": task.schedule_label,
         "default_kind": task.schedule_kind,
+        "only_alert_on_abnormal": False,
     }
 
 
@@ -43,7 +44,7 @@ def load_schedule(task: TaskDefinition, raw: str = "") -> dict[str, Any]:
         payload = json.loads(raw)
     except json.JSONDecodeError:
         return base
-    custom = normalize_schedule_payload(payload)
+    custom = normalize_schedule_payload(payload, task)
     return {
         **custom,
         "custom": True,
@@ -53,7 +54,7 @@ def load_schedule(task: TaskDefinition, raw: str = "") -> dict[str, Any]:
     }
 
 
-def normalize_schedule_payload(payload: dict[str, Any]) -> dict[str, Any]:
+def normalize_schedule_payload(payload: dict[str, Any], task: TaskDefinition | None = None) -> dict[str, Any]:
     mode = str(payload.get("mode") or "long_term").strip()
     if mode not in {"long_term", "date_range"}:
         raise ValueError("计划范围必须是长期或日期范围")
@@ -71,14 +72,19 @@ def normalize_schedule_payload(payload: dict[str, Any]) -> dict[str, Any]:
     times = _normalize_times(payload.get("times", []))
     if not weekdays:
         raise ValueError("至少选择一个星期")
-    if not times:
+    if (task is None or task.schedule_kind != "interval") and not times:
         raise ValueError("至少填写一个时间点")
+    only_alert_on_abnormal = payload.get("only_alert_on_abnormal", False)
+    if not isinstance(only_alert_on_abnormal, bool):
+        only_alert_on_abnormal = bool(only_alert_on_abnormal)
+
     return {
         "mode": mode,
         "start_date": start_date,
         "end_date": end_date,
         "weekdays": weekdays,
         "times": times,
+        "only_alert_on_abnormal": only_alert_on_abnormal,
     }
 
 
@@ -141,8 +147,8 @@ def due_key(task: TaskDefinition, schedule: dict[str, Any], now: datetime) -> st
     return ""
 
 
-def dumps_schedule(schedule: dict[str, Any]) -> str:
-    normalized = normalize_schedule_payload(schedule)
+def dumps_schedule(schedule: dict[str, Any], task: TaskDefinition | None = None) -> str:
+    normalized = normalize_schedule_payload(schedule, task)
     return json.dumps(normalized, ensure_ascii=False, sort_keys=True)
 
 

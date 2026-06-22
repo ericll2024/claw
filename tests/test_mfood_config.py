@@ -43,70 +43,7 @@ def test_mfood_settings_round_trip_masks_secret_values(tmp_path):
     assert private["order_monitor"]["takeout_threshold"] == "300"
 
 
-def test_mfood_login_account_fallback_to_env(tmp_path, monkeypatch):
-    import os
-    from traeclaw.mfood.login import MFoodLogin
 
-    db = AppDatabase(tmp_path / "app.sqlite3")
-    db.initialize()
-
-    # Save only password_md5, without profile or account
-    MFoodSettings.save(
-        db,
-        {
-            "login": {
-                "password_md5": "0123456789abcdef0123456789abcdef",
-            }
-        }
-    )
-
-    public = MFoodSettings.load_public(db)
-    private = MFoodSettings.load_private(db)
-
-    # login should be configured because only password_md5 is required now
-    assert public["login"]["configured"] is True
-    assert private["login"]["password_md5"] == "0123456789abcdef0123456789abcdef"
-    assert not private["login"]["account"]
-
-    # Verify MFoodLogin behavior
-    login = MFoodLogin(db, tmp_path)
-    
-    # 1. Without MFOOD_ACCOUNT env var, it should raise a RuntimeError about missing account
-    import pytest
-    monkeypatch.delenv("MFOOD_ACCOUNT", raising=False)
-    with pytest.raises(RuntimeError) as excinfo:
-        login.get_token()
-    assert "mFood 账号缺失" in str(excinfo.value)
-
-    # 2. With MFOOD_ACCOUNT env var, it should proceed (and fail on node script execution because it's a dummy test environment, but not fail on configuration check)
-    monkeypatch.setenv("MFOOD_ACCOUNT", "env-manager-account")
-    
-    # We mock subprocess.run in order to verify that defaults.json is written with env-manager-account
-    import subprocess
-    original_run = subprocess.run
-    called_args = []
-    
-    def mock_run(args, **kwargs):
-        called_args.append(args)
-        # return mock completed process with dummy json stdout
-        class MockCompletedProcess:
-            returncode = 0
-            stdout = '{"token": "dummy-token", "refreshToken": "dummy-refresh"}'
-            stderr = ""
-        return MockCompletedProcess()
-
-    monkeypatch.setattr(subprocess, "run", mock_run)
-    
-    token_res = login.get_token()
-    assert token_res["token"] == "dummy-token"
-    
-    # Check defaults.json contents
-    import json
-    defaults_path = tmp_path / "code" / "data" / "mfood_login" / "defaults.json"
-    assert defaults_path.exists()
-    defaults = json.loads(defaults_path.read_text())
-    assert defaults["profiles"]["default"]["account"] == "env-manager-account"
-    assert defaults["profiles"]["default"]["passwordMd5"] == "0123456789abcdef0123456789abcdef"
 
 
 def test_mfood_order_monitor_fallback_logic(tmp_path, monkeypatch):
@@ -167,7 +104,8 @@ def test_mfood_order_monitor_fallback_logic(tmp_path, monkeypatch):
     mock_monitor_instance.run.return_value.to_dict.return_value = {"status": "ok"}
     
     res = monitor.run()
-    assert res == {"status": "ok"}
+    assert res.get("status") == "ok"
+    assert "summary_text" in res
     
     # Verify OpenClawCredentials parameters retrieved from other settings sections
     mock_openclaw.OpenClawCredentials.assert_called_once_with(

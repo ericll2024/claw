@@ -8,8 +8,18 @@ import statistics
 import uuid
 from collections import Counter
 from datetime import datetime, timezone
+import os
+from pathlib import Path
 
-DB_PATH = '/home/eric/Documents/workspace/state/cp/doublecolor.db'
+_current_dir = Path(__file__).resolve().parent
+_data_db = _current_dir.parents[1] / "data" / "traeclaw.sqlite3"
+_state_db = _current_dir.parents[1] / "state" / "cp" / "doublecolor.db"
+if _data_db.exists():
+    _default_db = _data_db
+else:
+    _default_db = _state_db
+
+DB_PATH = os.environ.get("CP_DB_PATH", str(_default_db.resolve()))
 
 CREATE_SQL = '''
 CREATE TABLE IF NOT EXISTS backtest_runs (

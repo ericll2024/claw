@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 import json
 import itertools
 import math
@@ -10,7 +11,8 @@ from typing import Dict, List, Tuple
 
 from backtest_ssq import DB_PATH, PRIZE_MAP, build_strategy, ensure_tables, load_draws
 
-ROOT = Path('/home/eric/Documents/workspace')
+_current_dir = Path(__file__).resolve().parent
+ROOT = _current_dir.parents[1]
 PRED_LOG = ROOT / 'state' / 'cp' / 'predictions.jsonl'
 STRATEGY_VERSION = 'cp-v5.3'
 

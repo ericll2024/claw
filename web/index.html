@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Traeclaw Lite</title>
+    <title>claw</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
@@ -16,13 +16,14 @@
           </svg>
         </button>
         <div>
-          <h1>Traeclaw Lite</h1>
+          <h1>claw</h1>
           <p id="subtitle">本地任务、结果和通知配置</p>
         </div>
       </div>
       <div class="topbar-actions">
         <button id="refreshBtn" class="button">刷新</button>
         <a class="button primary" href="/settings">设置</a>
+        <button id="logoutBtn" class="button secondary">退出登录</button>
       </div>
     </header>
 
@@ -70,6 +71,73 @@
       </div>
     </div>
 
+    <!-- 工作流详情模态弹窗 -->
+    <div id="workflowModal" class="modal-overlay">
+      <div class="modal-content" style="max-width: 560px;">
+        <div class="modal-header">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <h2 id="workflowModalTitle">任务工作流</h2>
+          </div>
+          <button id="closeWorkflowModalBtn" class="modal-close-btn" type="button">&times;</button>
+        </div>
+        <div class="modal-body" id="workflowModalBody" style="padding: 20px; overflow-y: auto; max-height: 70vh;">
+          <!-- 工作流步骤将动态生成于此 -->
+        </div>
+      </div>
+    </div>
+
+    <!-- 警报详情模态弹窗 -->
+    <div id="alertModal" class="modal-overlay">
+      <div class="modal-content" style="max-width: 600px;">
+        <div class="modal-header">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <h2 id="alertModalTitle">警报原因分析</h2>
+          </div>
+          <button id="closeAlertModalBtn" class="modal-close-btn" type="button">&times;</button>
+        </div>
+        <div class="modal-body" id="alertModalBody" style="padding: 20px; overflow-y: auto; max-height: 70vh;">
+          <!-- 警报详情将动态生成于此 -->
+        </div>
+      </div>
+    </div>
+
+    <!-- 运行日志模态弹窗 -->
+    <div id="runLogModal" class="modal-overlay">
+      <div class="modal-content" style="max-width: 800px; width: 90%;">
+        <div class="modal-header">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <h2 id="runLogModalTitle">运行日志</h2>
+          </div>
+          <button id="closeRunLogModalBtn" class="modal-close-btn" type="button">&times;</button>
+        </div>
+        <div class="modal-body" id="runLogModalBody" style="padding: 20px; overflow-y: auto; max-height: 70vh; font-family: monospace; white-space: pre-wrap; font-size: 13px; background: #1e1e1e; color: #d4d4d4; border-radius: 4px; text-align: left;">
+          <!-- 日志内容将动态生成于此 -->
+        </div>
+      </div>
+    </div>
+
+    <!-- 任务配置模态弹窗 -->
+    <div id="configModal" class="modal-overlay">
+      <div class="modal-content" style="max-width: 600px; width: 90%;">
+        <div class="modal-header">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <h2 id="configModalTitle">任务配置</h2>
+          </div>
+          <button id="closeConfigModalBtn" class="modal-close-btn" type="button">&times;</button>
+        </div>
+        <form id="configForm" style="padding: 20px; display: flex; flex-direction: column; gap: 12px; text-align: left;">
+          <div style="font-size: 13px; color: var(--muted); line-height: 1.4;">
+            您可以直接在下方以 JSON 格式编辑此子任务的外部配置（例如商户 ID、门店 ID 等）：
+          </div>
+          <textarea id="configTextarea" style="width: 100%; height: 350px; font-family: monospace; font-size: 13px; padding: 12px; border: 1px solid var(--line); border-radius: 6px; box-sizing: border-box; resize: vertical; background: #f8f9fa; color: #2b3542;" placeholder="请输入有效的 JSON 配置..."></textarea>
+          <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px;">
+            <button class="button" id="cancelConfigBtn" type="button">取消</button>
+            <button class="button primary" id="saveConfigBtn" type="submit">保存配置</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
     <!-- 运行一次确认模态弹窗 -->
     <div id="runConfirmModal" class="modal-overlay">
       <div class="modal-content" style="max-width: 400px;">
@@ -82,13 +150,25 @@
         <div class="modal-body form" style="display: flex; flex-direction: column; gap: 12px; padding-top: 8px;">
           <p id="runConfirmMessage" style="margin: 0; font-size: 14px; color: var(--text);">是否确认运行该任务？</p>
           <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; font-size: 14px; margin-top: 8px;">
-            <input type="checkbox" id="runSendToTelegram" checked style="margin: 0;" />
+            <input type="checkbox" id="runSendToTelegram" style="margin: 0;" />
             <span>发送通知到 Telegram</span>
           </label>
           <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; border-top: 1px solid var(--line); padding-top: 12px;">
             <button id="cancelRunBtn" class="button secondary" type="button" style="background-color: var(--line); color: var(--text);">取消</button>
             <button id="confirmRunBtn" class="button" type="button">运行</button>
           </div>
+        </div>
+    <!-- 运行详情模态弹窗 -->
+    <div id="runDetailsModal" class="modal-overlay">
+      <div class="modal-content" style="width: 75vw; max-width: 900px; min-width: 450px;">
+        <div class="modal-header">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <h2 id="runDetailsModalTitle">运行详情</h2>
+          </div>
+          <button id="closeRunDetailsModalBtn" class="modal-close-btn" type="button">&times;</button>
+        </div>
+        <div class="modal-body" id="runDetailsModalBody" style="padding: 20px; overflow-y: auto; max-height: 75vh;">
+          <!-- 运行详情将动态生成于此 -->
         </div>
       </div>
     </div>

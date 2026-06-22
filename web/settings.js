@@ -6,6 +6,13 @@ const telegramState = document.querySelector("#telegramState");
 const mfoodForm = document.querySelector("#mfoodForm");
 const mfoodState = document.querySelector("#mfoodState");
 
+const mfoodLoginStatusBadge = document.querySelector("#mfoodLoginStatusBadge");
+const mfoodTokenStatusBadge = document.querySelector("#mfoodTokenStatusBadge");
+const mfoodTokenInfo = document.querySelector("#mfoodTokenInfo");
+const mfoodCurrentToken = document.querySelector("#mfoodCurrentToken");
+const checkMFoodTokenBtn = document.querySelector("#checkMFoodTokenBtn");
+const loginMFoodBtn = document.querySelector("#loginMFoodBtn");
+
 const mfoodFields = {
   login: {
     account: "#mfoodLoginAccount",
@@ -23,10 +30,23 @@ const mfoodFields = {
 };
 
 async function api(path, options = {}) {
+  const token = localStorage.getItem("token");
+  const headers = {
+    "Content-Type": "application/json",
+    ...options.headers,
+  };
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
   const response = await fetch(path, {
-    headers: { "Content-Type": "application/json" },
     ...options,
+    headers,
   });
+  if (response.status === 401) {
+    localStorage.removeItem("token");
+    window.location.href = "/login";
+    return new Promise(() => {});
+  }
   const payload = await response.json();
   if (!response.ok) {
     throw new Error(payload.error || `HTTP ${response.status}`);
@@ -62,15 +82,16 @@ async function loadMFood() {
   mfoodState.textContent = `${configuredCount}/3`;
   mfoodState.className = configuredCount === 3 ? "badge success" : configuredCount > 0 ? "badge running" : "badge";
 
-  const tokenStatus = document.querySelector("#mfoodTokenStatus");
-  if (tokenStatus) {
-    if (settings.login?.token_configured) {
-      tokenStatus.textContent = `已登录 / 已获取 (${settings.login.token_masked})`;
-      tokenStatus.style.color = "var(--green)";
-    } else {
-      tokenStatus.textContent = "未登录 / 未获取";
-      tokenStatus.style.color = "var(--muted)";
-    }
+  if (settings.login?.token_configured) {
+    mfoodLoginStatusBadge.textContent = "已登录";
+    mfoodLoginStatusBadge.className = "badge success";
+    mfoodTokenInfo.style.display = "block";
+    mfoodCurrentToken.textContent = settings.login.token;
+  } else {
+    mfoodLoginStatusBadge.textContent = "未登录";
+    mfoodLoginStatusBadge.className = "badge";
+    mfoodTokenInfo.style.display = "none";
+    mfoodCurrentToken.textContent = "";
   }
 }
 
@@ -139,25 +160,7 @@ mfoodLoginForm.addEventListener("submit", (event) => {
     .catch(showError);
 });
 
-const mfoodLoginBtn = document.querySelector("#mfoodLoginBtn");
-if (mfoodLoginBtn) {
-  mfoodLoginBtn.addEventListener("click", () => {
-    mfoodLoginBtn.disabled = true;
-    mfoodLoginBtn.textContent = "正在登录...";
-    api("/api/mfood/login", { method: "POST" })
-      .then((res) => {
-        showToast("登录成功，Token 已刷新并保存", "success");
-        loadMFood();
-      })
-      .catch((err) => {
-        showError(err);
-      })
-      .finally(() => {
-        mfoodLoginBtn.disabled = false;
-        mfoodLoginBtn.textContent = "立即登录 / 刷新 Token";
-      });
-  });
-}
+
 
 mfoodShenceForm.addEventListener("submit", (event) => {
   event.preventDefault();
@@ -196,6 +199,56 @@ mfoodMonitorForm.addEventListener("submit", (event) => {
       return loadMFood();
     })
     .catch(showError);
+});
+
+checkMFoodTokenBtn.addEventListener("click", async () => {
+  checkMFoodTokenBtn.disabled = true;
+  mfoodTokenStatusBadge.textContent = "检测中...";
+  mfoodTokenStatusBadge.className = "badge running";
+  try {
+    const res = await api("/api/settings/mfood/check", { method: "POST" });
+    if (res.ok) {
+      mfoodTokenStatusBadge.textContent = `有效 (${res.status})`;
+      mfoodTokenStatusBadge.className = "badge success";
+      showToast("Token 有效", "success");
+    } else {
+      mfoodTokenStatusBadge.textContent = `无效 (${res.status})`;
+      mfoodTokenStatusBadge.className = "badge failed";
+      showToast(`Token 无效: ${res.status}`, "error");
+    }
+  } catch (err) {
+    mfoodTokenStatusBadge.textContent = "检测失败";
+    mfoodTokenStatusBadge.className = "badge failed";
+    showError(err);
+  } finally {
+    checkMFoodTokenBtn.disabled = false;
+  }
+});
+
+loginMFoodBtn.addEventListener("click", async () => {
+  if (!confirm("确定要启动浏览器进行手动登录吗？这可能需要几十秒钟。")) {
+    return;
+  }
+  loginMFoodBtn.disabled = true;
+  loginMFoodBtn.textContent = "正在登录...";
+  mfoodTokenStatusBadge.textContent = "获取中...";
+  mfoodTokenStatusBadge.className = "badge running";
+  try {
+    const res = await api("/api/settings/mfood/login", { method: "POST" });
+    if (res.ok) {
+      showToast("手动登录成功，Token 已保存", "success");
+      await loadMFood();
+      // Verify the new token automatically
+      checkMFoodTokenBtn.click();
+    } else {
+      showToast(`登录失败: ${res.error}`, "error");
+    }
+  } catch (err) {
+    showError(err);
+  } finally {
+    loginMFoodBtn.disabled = false;
+    loginMFoodBtn.textContent = "手动登录";
+  }
 });
 
 // Telegram 消息監聽模態彈窗及輪詢邏輯
@@ -410,3 +463,18 @@ pollOnceBtn.addEventListener("click", async () => {
 });
 
 Promise.all([loadTelegram(), loadMFood()]).catch(showError);
+
+const logoutBtn = document.querySelector("#logoutBtn");
+if (logoutBtn) {
+  logoutBtn.addEventListener("click", async () => {
+    try {
+      await api("/api/logout", { method: "POST" });
+      localStorage.removeItem("token");
+      window.location.href = "/login";
+    } catch (err) {
+      console.error("Logout failed:", err);
+      localStorage.removeItem("token");
+      window.location.href = "/login";
+    }
+  });
+}

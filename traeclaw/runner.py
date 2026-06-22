@@ -28,6 +28,12 @@ TASK_FILE_MAP = {
         "code/state/facebook/fb_groups.json",
         "code/state/facebook/fb_storage_state.json",
     ],
+    "mfood.order_monitor": [
+        "code/state/mfdb/order_monitor_config.json",
+    ],
+    "mfood.maskphone_monitor": [
+        "code/state/mfdb/maskphone_monitor_config.json",
+    ],
 }
 
 
@@ -99,7 +105,26 @@ class TaskRunner:
         notify_status = ""
         notify_error = ""
         if trigger_type == "schedule" or (trigger_type == "manual" and send_to_telegram):
-            notify_status, notify_error = self._notify_if_configured(task, status, summary)
+            from .schedule import load_schedule
+            raw_schedule = self.db.get_setting(f"task.{task.id}.schedule", "")
+            schedule = load_schedule(task, raw_schedule)
+            only_alert = schedule.get("only_alert_on_abnormal", False)
+
+            should_notify = True
+            if task.id == "mfood.maskphone_monitor":
+                # Special rule: only notify on threshold exceeded (status == "alert" in result_payload)
+                should_notify = (
+                    status == "success"
+                    and isinstance(result_payload, dict)
+                    and result_payload.get("status") == "alert"
+                )
+            elif trigger_type == "schedule" and only_alert:
+                should_notify = check_run_has_alert(status, summary, result_payload)
+
+            if should_notify:
+                notify_status, notify_error = self._notify_if_configured(task, status, summary)
+            else:
+                notify_status = "skipped"
         self.db.finish_run(
             run_id,
             status=status,
@@ -237,3 +262,37 @@ def _parse_json(stdout: str) -> Any:
             except json.JSONDecodeError:
                 pass
         return None
+
+
+def check_run_has_alert(status: str, summary: str, result_payload: Any) -> bool:
+    if status != "success":
+        return True
+    if _payload_has_alert(result_payload):
+        return True
+    if _text_has_alert(summary):
+        return True
+    return False
+
+
+def _payload_has_alert(value: Any) -> bool:
+    if isinstance(value, dict):
+        status = str(value.get("status") or "").strip().lower()
+        if status == "alert":
+            return True
+        for key, item in value.items():
+            key_text = str(key).lower()
+            if key_text.endswith("alert") and item is True:
+                return True
+            if _payload_has_alert(item):
+                return True
+        return False
+    if isinstance(value, list):
+        return any(_payload_has_alert(item) for item in value)
+    if isinstance(value, str):
+        return _text_has_alert(value)
+    return False
+
+
+def _text_has_alert(value: str) -> bool:
+    alert_words = ("报警", "告警", "异常")
+    return any(word in value for word in alert_words)

@@ -93,7 +93,7 @@ def fetch_draw(conn, draw_num):
     return conn.execute('SELECT r.*, NULL as pool_balance_afterdraw FROM dlt_results r WHERE r.draw_num = ?', (draw_num,)).fetchone()
 
 
-def build_report(draw_num, win_front, win_back, top_level, fixed_total, floating_hits, level_counter, main_summary, ref_summary, comparison_text, ticket_count):
+def build_report(draw_num, win_front, win_back, top_level, fixed_total, floating_hits, level_counter, group_summaries, comparison_text, ticket_count):
     lines = [
         f'第{draw_num}期开奖：{" ".join(win_front)} + {" ".join(win_back)}',
         f'本期最佳命中：{top_level or "未中奖"}',
@@ -107,10 +107,8 @@ def build_report(draw_num, win_front, win_back, top_level, fixed_total, floating
     if level_counter:
         summary = '、'.join(f'{level}{count}注' for level, count in sorted(level_counter.items(), key=lambda x: prize_rank(x[0])))
         lines.append(f'奖级分布：{summary}')
-    if main_summary:
-        lines.append(main_summary)
-    if ref_summary:
-        lines.append(ref_summary)
+    for s in group_summaries:
+        lines.append(s)
     if comparison_text:
         if ticket_count <= 20:
             lines.append(f'明细：{comparison_text}')
@@ -125,7 +123,7 @@ def main():
     parser.add_argument('--draw-num', required=True)
     parser.add_argument('--review-time', default=datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
     parser.add_argument('--miss-reason', default='待补充')
-    parser.add_argument('--fix-direction', default='后区防守：维持；前区区间：均衡；和值：维持；奇偶大小：再平衡；连号重号：维持；出票结构：维持；目标：继续冲二等奖接近度')
+    parser.add_argument('--fix-direction', default='后区防守：维持；前区区间：维持；和值：维持；奇偶大小：再平衡；出票结构：维持')
     parser.add_argument('--review-text', default='待补充')
     args = parser.parse_args()
 
@@ -152,10 +150,12 @@ def main():
     main_summary = None
     ref_summary = None
     comparisons = []
-    group_stats = {
-        'key': {'label': '主推', 'count': 0, 'fixed_total': 0, 'best_level': '未中奖', 'floating_hits': []},
-        'reference': {'label': '参考', 'count': 0, 'fixed_total': 0, 'best_level': '未中奖', 'floating_hits': []},
+    label_map = {
+        'key': '主推(100元档)',
+        'reference': '参考(500元档)',
+        'budget_1000': '1000元档',
     }
+    group_stats = {}
 
     for t in tickets:
         front = [t['front_1'], t['front_2'], t['front_3'], t['front_4'], t['front_5']]
@@ -176,25 +176,38 @@ def main():
         summary = f'{label}：前区中{hf}，后区中{hb}，{level_text}'
         comparisons.append(summary)
         ticket_type = t['ticket_type']
-        if ticket_type in group_stats:
-            group_stats[ticket_type]['count'] += 1
-            if amount is not None:
-                group_stats[ticket_type]['fixed_total'] += amount
-            if prize_rank(level) < prize_rank(group_stats[ticket_type]['best_level']):
-                group_stats[ticket_type]['best_level'] = level
-            if level in ('一等奖', '二等奖'):
-                group_stats[ticket_type]['floating_hits'].append({'label': label, 'level': level})
+        if ticket_type not in group_stats:
+            group_stats[ticket_type] = {
+                'label': label_map.get(ticket_type, ticket_type),
+                'count': 0,
+                'fixed_total': 0,
+                'best_level': '未中奖',
+                'floating_hits': []
+            }
+        group_stats[ticket_type]['count'] += 1
+        if amount is not None:
+            group_stats[ticket_type]['fixed_total'] += amount
+        if prize_rank(level) < prize_rank(group_stats[ticket_type]['best_level']):
+            group_stats[ticket_type]['best_level'] = level
+        if level in ('一等奖', '二等奖'):
+            group_stats[ticket_type]['floating_hits'].append({'label': label, 'level': level})
         if level in ('一等奖', '二等奖'):
             floating_hits.append({'label': label, 'level': level})
         if prize_rank(level) < prize_rank(top_level):
             top_level = level
 
     top_level = top_level or '未中奖'
-    for ticket_type, stats in group_stats.items():
+    group_summaries = []
+    order_weight = {'key': 0, 'reference': 1, 'budget_1000': 2}
+    sorted_types = sorted(group_stats.keys(), key=lambda k: order_weight.get(k, 99))
+
+    for ticket_type in sorted_types:
+        stats = group_stats[ticket_type]
         if stats['count'] == 0:
             continue
         floating_desc = f"，浮动奖{len(stats['floating_hits'])}注" if stats['floating_hits'] else ''
         summary = f"{stats['label']}：{stats['count']}注，最佳{stats['best_level']}，固定奖金{stats['fixed_total']}元{floating_desc}"
+        group_summaries.append(summary)
         if ticket_type == 'key':
             main_summary = summary
         elif ticket_type == 'reference':
@@ -203,7 +216,7 @@ def main():
     comparison_text = '；'.join(comparisons)
     report_text = build_report(
         args.draw_num, win_front, win_back, top_level, fixed_total,
-        floating_hits, level_counter, main_summary, ref_summary, comparison_text, len(tickets)
+        floating_hits, level_counter, group_summaries, comparison_text, len(tickets)
     )
     final_review_text = args.review_text if args.review_text != '待补充' else report_text
 

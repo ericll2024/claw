@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import argparse
 import json
 import os
 import uuid
@@ -109,24 +108,3 @@ def parse_response_text(raw_text: str) -> list[dict[str, Any]]:
     return rows
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Run mFood Sensors SQL through Traeclaw config")
-    parser.add_argument("--sql", default="SELECT 1 AS health_check FROM events LIMIT 1")
-    parser.add_argument("--limit", type=int, default=10)
-    parser.add_argument("--timeout", type=int, default=60)
-    args = parser.parse_args(argv)
-    root = Path(os.environ.get("TRAECLAW_PROJECT_ROOT", Path(__file__).resolve().parents[3])).resolve()
-    db_path = Path(os.environ.get("TRAECLAW_DB_PATH", root / "code" / "data" / "traeclaw.sqlite3"))
-    db = AppDatabase(db_path)
-    db.initialize()
-    try:
-        result = MFoodShence(db).query(args.sql, limit=args.limit, timeout=args.timeout)
-    except Exception as exc:
-        print(json.dumps({"error": str(exc)}, ensure_ascii=False))
-        return 1
-    print(json.dumps(result, ensure_ascii=False))
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

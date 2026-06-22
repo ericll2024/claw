@@ -22,7 +22,7 @@ def build_app(args) -> TraeclawApp:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Traeclaw Lite task dashboard")
+    parser = argparse.ArgumentParser(description="claw task dashboard")
     parser.add_argument("--project-root", default="")
     parser.add_argument("--db", default="")
     parser.add_argument("--no-import-state", action="store_true")
@@ -64,7 +64,7 @@ def main(argv: list[str] | None = None) -> int:
 
     httpd = make_server((args.host, args.port), app)
     url = f"http://{args.host}:{httpd.server_address[1]}"
-    print(f"Traeclaw Lite running at {url}")
+    print(f"claw running at {url}")
     print(f"Database: {app.db.path}")
     try:
         httpd.serve_forever()

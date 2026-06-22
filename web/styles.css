@@ -396,6 +396,8 @@ h2 {
   flex: 1;
   overflow-y: auto;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .task-stack {
@@ -445,6 +447,16 @@ h2 {
   white-space: nowrap;
 }
 
+.alert-tag.clickable {
+  transition: all 0.2s ease;
+}
+
+.alert-tag.clickable:hover {
+  background: var(--red);
+  color: #ffffff;
+  border-color: var(--red);
+}
+
 .task-desc,
 .run-meta,
 .small {
@@ -460,7 +472,12 @@ h2 {
 }
 
 .runs-panel {
-  display: grid;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  height: 100%;
+  min-height: 0;
+  box-sizing: border-box;
   gap: 12px;
   padding: 12px;
 }
@@ -485,9 +502,12 @@ h2 {
 }
 
 .runs-table-wrap {
+  flex: 1;
   overflow-x: auto;
+  overflow-y: auto;
   border: 1px solid #eef1f4;
   border-radius: 8px;
+  min-height: 0;
 }
 
 .runs-table {
@@ -510,6 +530,11 @@ h2 {
   font-size: 12px;
   font-weight: 650;
   background: #fafbfc;
+  text-align: center;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  border-bottom: 1px solid #eef1f4;
 }
 
 .runs-table tr:last-child td {
@@ -557,7 +582,7 @@ h2 {
 
 .task-grid {
   display: grid;
-  grid-template-columns: 1fr 110px 80px 110px 150px;
+  grid-template-columns: 1fr 110px 110px 150px;
   gap: 10px;
 }
 
@@ -750,6 +775,12 @@ h2 {
   background: #fff8dd;
 }
 
+.badge.alert, .badge.warning, .badge.partial_error {
+  color: var(--yellow);
+  border-color: #e6d39c;
+  background: #fff8dd;
+}
+
 .button {
   display: inline-flex;
   align-items: center;
@@ -779,6 +810,17 @@ h2 {
 
 .button.primary:hover {
   background: var(--accent-strong);
+}
+
+.button.danger {
+  color: var(--red);
+  border-color: var(--red);
+  background: #ffffff;
+}
+
+.button.danger:hover {
+  background: #fff1f0;
+  border-color: #ecc1bd;
 }
 
 .button:disabled {
@@ -1197,3 +1239,253 @@ code {
 .layout.searching .agent-sort-actions {
   display: none !important;
 }
+
+/* Custom run log details & delete button styles */
+.runs-table tr.run-row {
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.runs-table tr.run-row:hover {
+  background-color: #f7faf9;
+}
+
+.runs-table th:nth-child(7),
+.runs-table td:nth-child(7) {
+  width: 70px;
+  text-align: center;
+}
+
+.delete-run-btn {
+  min-height: 24px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 550;
+  border-color: #ecc1bd;
+  color: var(--red);
+  background: #fff1f0;
+  transition: all 0.2s ease;
+}
+
+.delete-run-btn:hover {
+  border-color: var(--red);
+  background: var(--red);
+  color: #ffffff;
+}
+
+.runs-table tr.run-details-row.hidden {
+  display: none;
+}
+
+.runs-table tr.run-details-row td {
+  padding: 0;
+  border-bottom: 1px solid #eef1f4;
+}
+
+.run-details-content {
+  padding: 16px 20px;
+  background: #fafbfc;
+  border-left: 4px solid var(--accent);
+}
+
+.run-details-grid {
+  display: flex;
+  gap: 24px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.run-details-grid strong {
+  color: var(--text);
+}
+
+.log-section {
+  margin-top: 10px;
+}
+
+.log-section strong {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+
+.log-block {
+  margin: 0;
+  padding: 12px;
+  background: #282c34;
+  color: #abb2bf;
+  border-radius: 6px;
+  font-family: Menlo, Monaco, Consolas, "Courier New", monospace;
+  font-size: 12.5px;
+  line-height: 1.5;
+  overflow-x: auto;
+  max-height: 300px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.log-block.stderr {
+  background: #2c1e1e;
+  color: #f0a0a0;
+  border-left: 3px solid var(--red);
+}
+
+.log-block.stdout {
+  background: #1e2520;
+  color: #a0f0b0;
+  border-left: 3px solid var(--green);
+}
+
+/* 工作流模态弹窗特定样式 */
+.workflow-steps {
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  padding-left: 20px;
+}
+
+.workflow-step {
+  display: flex;
+  position: relative;
+  padding-bottom: 24px;
+}
+
+.workflow-step:last-child {
+  padding-bottom: 0;
+}
+
+/* 时间轴纵线 */
+.workflow-step::before {
+  content: "";
+  position: absolute;
+  left: -21px;
+  top: 24px;
+  bottom: 0;
+  width: 2px;
+  background: var(--line);
+}
+
+.workflow-step:last-child::before {
+  display: none;
+}
+
+/* 步骤数字徽章 */
+.workflow-step-badge {
+  position: absolute;
+  left: -32px;
+  top: 0;
+  width: 24px;
+  height: 24px;
+  background: var(--accent);
+  color: #fff;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: bold;
+  box-shadow: 0 0 0 4px var(--panel);
+  z-index: 1;
+}
+
+/* 步骤内容 */
+.workflow-step-content {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 12px 16px;
+  margin-left: 12px;
+}
+
+.workflow-step-title {
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+.workflow-step-desc {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+/* 搜尋時隱藏子任務排序按鈕 */
+.layout.searching .task-sort-actions {
+  display: none !important;
+}
+
+/* 子任務表格自定義樣式 */
+.tasks-table-wrap {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  overflow: hidden;
+  margin-top: 12px;
+  width: 100%;
+}
+
+.tasks-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.tasks-table th,
+.tasks-table td {
+  padding: 10px 14px;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+}
+
+.tasks-table th {
+  background: rgba(0, 0, 0, 0.15);
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  text-align: center;
+}
+
+.tasks-table tr:last-child td {
+  border-bottom: none;
+}
+
+.tasks-table tr:hover {
+  background: rgba(0, 150, 136, 0.03);
+}
+
+/* 列表与表格间隔显示浅灰色 (Zebra Striping) */
+.runs-table tbody tr:nth-child(even) {
+  background-color: #f5f7f9;
+}
+.runs-table tbody tr.run-row:hover {
+  background-color: #f0f2f5;
+}
+
+.tasks-table tbody tr:nth-child(even) {
+  background-color: #f5f7f9;
+}
+.tasks-table tbody tr:hover {
+  background-color: #eef1f4;
+}
+
+.agents-list .agent-item-wrap:nth-child(even) .agent-item:not(:hover):not(.active) {
+  background-color: #f5f7f9;
+}
+
+.updates-list .update-item:nth-child(even):not(.mention) {
+  background-color: #f5f7f9;
+}
+.updates-list .update-item:nth-child(odd):not(.mention) {
+  background-color: #ffffff;
+}
+
+
+
+

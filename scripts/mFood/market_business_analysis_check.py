@@ -44,23 +44,49 @@ def load_config() -> dict:
 
 def get_login_token(profile: str = "") -> str:
     from traeclaw.db import AppDatabase
-    from traeclaw.mfood.login import MFoodLogin
     from pathlib import Path
     
     proj_root = Path(os.environ.get("TRAECLAW_PROJECT_ROOT") or Path(__file__).resolve().parents[3])
     db_file = Path(os.environ.get("TRAECLAW_DB_PATH") or (proj_root / "code" / "data" / "traeclaw.sqlite3"))
     
     db = AppDatabase(db_file)
-    login = MFoodLogin(db, proj_root)
-    res = login.get_token()
-    token = to_text(res.get("token"))
+    token = db.get_setting("mfood.login.token", "").strip()
     if not token:
-        raise RuntimeError("mFood login returned empty token")
+        raise RuntimeError("mFood token not configured or empty in database")
     return token
 
 
-def build_headers(cfg: dict, x_merchant: str, x_token: str) -> dict:
-    headers = dict(cfg.get("headers") or {})
+DEFAULT_HEADERS = {
+    "accept": "application/json",
+    "accept-language": "zh-CN,zh;q=0.9",
+    "content-type": "application/json;charset=UTF-8",
+    "origin": "https://merchant.mfoodapp.com",
+    "priority": "u=1, i",
+    "referer": "https://merchant.mfoodapp.com/",
+    "sec-ch-ua": '"Google Chrome";v="149", "Chromium";v="149", "Not)A;Brand";v="24"',
+    "sec-ch-ua-mobile": "?0",
+    "sec-ch-ua-platform": '"macOS"',
+    "sec-fetch-dest": "empty",
+    "sec-fetch-mode": "cors",
+    "sec-fetch-site": "same-site",
+    "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+    "x-ca-key": "83579288",
+    "x-device-id": "7892dbca-2fa9-4d04-bf6f-13d7deb04d29",
+    "x-scope": "manager",
+    "x-client": "web",
+    "x-client-version": "2.0.0",
+}
+
+DEFAULT_PAYLOAD = {
+    "dateType": 1,
+    "storeId": None,
+}
+
+
+def build_headers(cfg: dict, x_merchant: str, x_token: str, store_id: str = None) -> dict:
+    headers = dict(DEFAULT_HEADERS)
+    if cfg.get("headers"):
+        headers.update(cfg["headers"])
     timestamp = str(int(datetime.now(TZ).timestamp() * 1000))
     nonce = hashlib.md5((uuid.uuid4().hex + timestamp).encode("utf-8")).hexdigest()
     scope = to_text(headers.get("x-scope") or "manager")
@@ -83,20 +109,43 @@ def build_headers(cfg: dict, x_merchant: str, x_token: str) -> dict:
     headers["x-ca-signature"] = signature
     headers["x-merchant"] = x_merchant
     headers["x-token"] = x_token
+    headers["x-platform"] = "rider"
+    if store_id:
+        headers["x-store"] = store_id
+        headers["x-storeid"] = store_id
     return headers
 
 
 def build_payload(cfg: dict, store_id: str) -> dict:
-    payload = dict(cfg.get("payload") or {})
+    payload = dict(DEFAULT_PAYLOAD)
+    if cfg.get("payload"):
+        payload.update(cfg["payload"])
     payload["storeId"] = store_id
     return payload
 
 
-def post_json(headers: dict, payload: dict, url: str = URL) -> dict:
+
+def _post_json_raw(headers: dict, payload: dict, url: str = URL) -> dict:
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     req = urllib.request.Request(url, data=body, headers=headers, method="POST")
-    with urllib.request.urlopen(req, timeout=45) as resp:
+    with urllib.request.urlopen(req, timeout=60) as resp:
         return json.loads(resp.read().decode("utf-8"))
+
+
+def post_json(headers: dict, payload: dict, url: str = URL) -> dict:
+    import time
+    retries = 2
+    delay = 2.0
+    for attempt in range(retries + 1):
+        try:
+            return _post_json_raw(headers, payload, url)
+        except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, OSError) as exc:
+            is_http_error = isinstance(exc, urllib.error.HTTPError)
+            if is_http_error and exc.code < 500:
+                raise
+            if attempt == retries:
+                raise
+            time.sleep(delay * (attempt + 1))
 
 
 def parse_http_error_detail(detail: str) -> str:
@@ -150,13 +199,25 @@ def ensure_db() -> sqlite3.Connection:
     return conn
 
 
-def load_market_stores(conn: sqlite3.Connection) -> List[dict]:
+def load_market_stores(cfg: dict, conn: sqlite3.Connection) -> List[dict]:
+    if "stores" in cfg and isinstance(cfg["stores"], list) and cfg["stores"]:
+        return cfg["stores"]
+    cfg_merchant_ids = cfg.get("merchant_ids") or cfg.get("merchantIds")
+    if isinstance(cfg_merchant_ids, list):
+        cfg_merchant_ids = [to_text(m) for m in cfg_merchant_ids if to_text(m)]
+    else:
+        cfg_merchant_ids = []
     cur = conn.cursor()
-    cur.execute("SELECT merchant_id, store_id, store_name FROM market_stores ORDER BY merchant_id, store_id")
+    if cfg_merchant_ids:
+        placeholders = ",".join("?" for _ in cfg_merchant_ids)
+        cur.execute(f"SELECT merchant_id, store_id, store_name FROM market_stores WHERE merchant_id IN ({placeholders}) ORDER BY merchant_id, store_id", cfg_merchant_ids)
+    else:
+        cur.execute("SELECT merchant_id, store_id, store_name FROM market_stores ORDER BY merchant_id, store_id")
     return [
         {"merchant_id": row[0], "store_id": row[1], "store_name": row[2]}
         for row in cur.fetchall()
     ]
+
 
 
 def is_zero(value: Any) -> bool:
@@ -187,9 +248,7 @@ def yesterday_range_ms() -> tuple[int, int]:
 
 
 def build_review_headers(cfg: dict, x_merchant: str, x_token: str, store_id: str) -> dict:
-    headers = build_headers(cfg, x_merchant, x_token)
-    headers["x-store"] = store_id
-    headers["x-storeid"] = store_id
+    headers = build_headers(cfg, x_merchant, x_token, store_id)
     return headers
 
 
@@ -202,7 +261,7 @@ def build_review_payload(store_id: str) -> dict:
         "deliveryType": None,
         "date": [start_ms, end_ms],
         "phone": None,
-        "storeId": "",
+        "storeId": None,
         "timeType": 1,
         "orderNumber": None,
         "startTime": start_ms,
@@ -252,6 +311,12 @@ def persist_run(conn: sqlite3.Connection, status: str, checked_store_count: int,
     )
     run_id = cur.lastrowid
     for record in records:
+        db_payload = record.get("raw") or {}
+        if record.get("review_raw"):
+            db_payload = {
+                "business_data": record.get("raw") or {},
+                "review_orders": record.get("review_raw"),
+            }
         cur.execute(
             """
             INSERT INTO market_business_analysis_records (
@@ -265,22 +330,44 @@ def persist_run(conn: sqlite3.Connection, status: str, checked_store_count: int,
                 record.get("store_name") or "",
                 to_text(record.get("businessAmtn")),
                 1 if record.get("has_issue") else 0,
-                json.dumps(record.get("raw") or {}, ensure_ascii=False),
+                json.dumps(db_payload, ensure_ascii=False),
             ),
         )
     conn.commit()
 
 
 def render_issue(record: dict) -> str:
+    review_raw = record.get('review_raw') or {}
+    orders = []
+    if isinstance(review_raw, dict):
+        orders = review_raw.get("result") or review_raw.get("list") or review_raw.get("records") or []
+        if not isinstance(orders, list):
+            orders = []
+    elif isinstance(review_raw, list):
+        orders = review_raw
+    
+    order_summaries = []
+    for order in orders[:5]:
+        order_id = order.get("id") or order.get("tradeNo") or "未知"
+        amount = order.get("realPayAmt") or order.get("orderAmountAmt") or 0
+        pay_time = ""
+        if order.get("payTime"):
+            try:
+                pay_time = " " + datetime.fromtimestamp(order.get("payTime") / 1000, TZ).strftime("%H:%M:%S")
+            except Exception:
+                pass
+        order_summaries.append(f"  - 订单号: {order_id}, 实付金额: {amount}{pay_time}")
+    
+    if len(orders) > 5:
+        order_summaries.append(f"  - ... 还有 {len(orders) - 5} 笔订单")
+        
     lines = [
         "超市经营分析门店问题",
         f"门店id：{record.get('store_id') or ''}",
         f"门店名：{record.get('store_name') or ''}",
-        f"经营分析json：{json.dumps(record.get('raw') or {}, ensure_ascii=False)}",
+        f"提示：昨日营业额为 0，但复查发现有 {len(orders)} 笔有效订单：",
+        *order_summaries
     ]
-    review_raw = record.get('review_raw')
-    if review_raw:
-        lines.append(f"複查订单json：{json.dumps(review_raw, ensure_ascii=False)}")
     return "\n".join(lines)
 
 
@@ -288,7 +375,7 @@ def main() -> int:
     cfg = load_config()
     token_profile = to_text(cfg.get("token_profile") or "default")
     conn = ensure_db()
-    stores = load_market_stores(conn)
+    stores = load_market_stores(cfg, conn)
     if not stores:
         msg = "需人工复核：market_stores 暂无门店数据"
         persist_run(conn, "error", 0, 0, msg, {"token_profile": token_profile}, [])
@@ -305,38 +392,71 @@ def main() -> int:
         conn.close()
         return 2
 
+    cfg_merchant_ids = cfg.get("merchant_ids") or cfg.get("merchantIds") or []
+    if not isinstance(cfg_merchant_ids, list):
+        cfg_merchant_ids = [cfg_merchant_ids]
+    cfg_merchant_ids = [to_text(m) for m in cfg_merchant_ids if to_text(m)]
+    fallback_merchant_id = cfg_merchant_ids[0] if cfg_merchant_ids else ""
     checked = []
     issues = []
     errors = []
     raw_payload = []
+
+    def process_store(store):
+        merchant_id = store.get("merchant_id") or store.get("merchantNo") or fallback_merchant_id
+        store_id = store["store_id"]
+        store_name = store["store_name"]
+        store_checked = []
+        store_issues = []
+        store_error = None
+        store_raw_payload = None
+        try:
+            resp = post_json(build_headers(cfg, merchant_id, login_token, store_id), build_payload(cfg, store_id))
+            store_raw_payload = {"merchant_id": merchant_id, "store_id": store_id, "response": resp}
+            items = pick_business_amtn_items(resp)
+            if not items:
+                store_checked.append({**store, "businessAmtn": "", "has_issue": False, "raw": resp})
+                return store_checked, store_issues, None, store_raw_payload
+            for item in items:
+                value = item.get("businessAmtn") if isinstance(item, dict) else None
+                actual_store_id = item.get("storeId") if isinstance(item, dict) and item.get("storeId") else store_id
+                actual_store_name = item.get("storeName") if isinstance(item, dict) and item.get("storeName") else store_name
+                rec = {
+                    **store,
+                    "store_id": actual_store_id,
+                    "store_name": actual_store_name,
+                    "businessAmtn": value,
+                    "has_issue": False,
+                    "raw": item if isinstance(item, dict) else {"value": item}
+                }
+                if is_zero(value):
+                    has_orders, review_resp = review_has_orders(cfg, merchant_id, actual_store_id, login_token)
+                    rec["review_raw"] = review_resp
+                    rec["has_issue"] = has_orders
+                store_checked.append(rec)
+                if rec["has_issue"]:
+                    store_issues.append(rec)
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            parsed = parse_http_error_detail(detail)
+            store_error = f"store {store_id}: HTTP {exc.code}" + (f"，{parsed}" if parsed else "")
+        except Exception as exc:
+            store_error = f"store {store_id}: {exc}"
+            
+        return store_checked, store_issues, store_error, store_raw_payload
+
+    from concurrent.futures import ThreadPoolExecutor
     try:
-        for store in stores:
-            merchant_id = store["merchant_id"]
-            store_id = store["store_id"]
-            store_name = store["store_name"]
-            try:
-                resp = post_json(build_headers(cfg, merchant_id, login_token), build_payload(cfg, store_id))
-                raw_payload.append({"merchant_id": merchant_id, "store_id": store_id, "response": resp})
-                items = pick_business_amtn_items(resp)
-                if not items:
-                    checked.append({**store, "businessAmtn": "", "has_issue": False, "raw": resp})
-                    continue
-                for item in items:
-                    value = item.get("businessAmtn") if isinstance(item, dict) else None
-                    rec = {**store, "businessAmtn": value, "has_issue": False, "raw": item if isinstance(item, dict) else {"value": item}}
-                    if is_zero(value):
-                        has_orders, review_resp = review_has_orders(cfg, merchant_id, store_id, login_token)
-                        rec["review_raw"] = review_resp
-                        rec["has_issue"] = has_orders
-                    checked.append(rec)
-                    if rec["has_issue"]:
-                        issues.append(rec)
-            except urllib.error.HTTPError as exc:
-                detail = exc.read().decode("utf-8", errors="replace")
-                parsed = parse_http_error_detail(detail)
-                errors.append(f"store {store_id}: HTTP {exc.code}" + (f"，{parsed}" if parsed else ""))
-            except Exception as exc:
-                errors.append(f"store {store_id}: {exc}")
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            results = list(executor.map(process_store, stores))
+            
+        for store_checked, store_issues, store_error, store_raw_payload in results:
+            checked.extend(store_checked)
+            issues.extend(store_issues)
+            if store_error:
+                errors.append(store_error)
+            if store_raw_payload:
+                raw_payload.append(store_raw_payload)
 
         if errors:
             status = "partial_error" if checked else "error"
@@ -350,6 +470,14 @@ def main() -> int:
 
         persist_run(conn, status, len(checked), len(issues), message, {"token_profile": token_profile, "store_count": len(stores), "errors": errors, "responses": raw_payload[:20]}, checked)
         print(with_report_title(status, message))
+        if status == "ok":
+            print("数据正常")
+        elif status == "alert":
+            print(f"发现 {len(issues)} 家门店有营业数据异常，请人工核对")
+        elif status == "partial_error":
+            print("部分门店数据查询失败")
+        else:
+            print("查询失败，请检查错误日志")
         return 1 if status in {"alert", "partial_error", "error"} else 0
     finally:
         conn.close()

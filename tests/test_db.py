@@ -110,3 +110,27 @@ def test_telegram_chat_titles(tmp_path):
         "-1001": "New Group Title",
         "-1002": "Another Group"
     }
+
+
+def test_delete_run(tmp_path):
+    db = AppDatabase(tmp_path / "app.sqlite3")
+    db.initialize()
+
+    run_id = db.start_run("mfood.market_summary", trigger_type="manual")
+    db.finish_run(
+        run_id,
+        status="failed",
+        exit_code=1,
+        stdout="some output",
+        stderr="some error",
+        summary="failed summary",
+        result_payload={"error": "details"}
+    )
+
+    assert len(db.get_runs("mfood.market_summary")) == 1
+    assert len(db.get_task_results("mfood.market_summary")) == 1
+
+    db.delete_run(run_id)
+
+    assert len(db.get_runs("mfood.market_summary")) == 0
+    assert len(db.get_task_results("mfood.market_summary")) == 0

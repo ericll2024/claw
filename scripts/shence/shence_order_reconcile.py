@@ -60,19 +60,16 @@ def parse_args():
 
 def get_token():
     from traeclaw.db import AppDatabase
-    from traeclaw.mfood.login import MFoodLogin
     from pathlib import Path
     
     proj_root = Path(os.environ.get("TRAECLAW_PROJECT_ROOT") or Path(__file__).resolve().parents[3])
     db_file = Path(os.environ.get("TRAECLAW_DB_PATH") or (proj_root / "code" / "data" / "traeclaw.sqlite3"))
     
     db = AppDatabase(db_file)
-    login = MFoodLogin(db, proj_root)
-    res = login.get_token()
-    token = str(res.get("token", "")).strip()
+    token = db.get_setting("mfood.login.token", "").strip()
     if not token:
-        raise RuntimeError("mFood login returned empty token")
-    return res
+        raise RuntimeError("mFood token not configured or empty in database")
+    return {"token": token}
 
 
 def shence_first_row(sql):
@@ -157,7 +154,7 @@ def api_count(token, resource, date_str, status):
     nonce = hashlib.md5((uuid.uuid4().hex + timestamp).encode("utf-8")).hexdigest()
     scope = "manager"
     client = "web"
-    client_version = "9.0.0"
+    client_version = "2.0.0"
     ca_secret = "5fde65edc94340458a4411d412bdc454"
     
     canonical = (
@@ -181,7 +178,7 @@ def api_count(token, resource, date_str, status):
         "x-client": client,
         "x-client-version": client_version,
         "x-token": token,
-        "x-platform": "MacIntel",
+        "x-platform": "rider",
         "x-user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36",
     }
     

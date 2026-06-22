@@ -1,4 +1,4 @@
-"""Traeclaw Lite local task dashboard."""
+"""claw local task dashboard."""
 
 __all__ = ["__version__"]
 

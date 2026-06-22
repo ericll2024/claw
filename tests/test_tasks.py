@@ -32,8 +32,6 @@ def test_registry_includes_legacy_script_tasks_as_visible_items():
 def test_registry_includes_migrated_mfood_skill_tasks():
     task_ids = {task.id for task in list_tasks()}
 
-    assert "mfood.login_token" in task_ids
-    assert "mfood.shence_health" in task_ids
     assert "mfood.order_monitor" in task_ids
 
 
@@ -48,7 +46,16 @@ def test_next_run_for_daily_task_rolls_to_today_or_tomorrow():
 
 
 def test_manual_task_has_no_next_run():
-    task = get_task("mfood.login_token")
+    from traeclaw.tasks.registry import TaskDefinition
+    task = TaskDefinition(
+        id="test.manual",
+        name="Test Manual",
+        group="test",
+        description="test manual task",
+        schedule_label="手动触发",
+        command=["echo"],
+        schedule_kind="manual"
+    )
 
     assert task.schedule_label == "手动触发"
     assert task.next_run_after(datetime(2026, 6, 9, 8, 30, tzinfo=TZ)) is None

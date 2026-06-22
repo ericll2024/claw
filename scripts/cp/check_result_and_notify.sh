@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
-ROOT="/home/eric/Documents/workspace"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$ROOT"
 FETCH=$(python3 scripts/cp/fetch_ssq.py --mode latest --latest-pages 1 2>/tmp/cp_ssq_result.err || true)
 if [ -n "$FETCH" ]; then

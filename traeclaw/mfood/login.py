@@ -18,6 +18,94 @@ class MFoodLogin:
         self.state_dir = self.project_root / "code" / "data" / "mfood_login"
         self.script_path = Path(__file__).resolve().parent / "vendor" / "get_mfood_token.js"
 
+    def validate_token(self, token: str) -> tuple[bool, str]:
+        import time
+        import uuid
+        import hashlib
+        import hmac
+        import base64
+        import urllib.request
+        import urllib.error
+
+        if not token:
+            return False, "Token is empty"
+
+        url = "https://management-api.mfoodapp.com/managers/orgs/users/_getName"
+        timestamp = str(int(time.time() * 1000))
+        nonce = hashlib.md5((uuid.uuid4().hex + timestamp).encode("utf-8")).hexdigest()
+
+        scope = "manager"
+        client = "web"
+        client_version = "9.0.0"
+        ca_secret = "5fde65edc94340458a4411d412bdc454"
+
+        canonical = (
+            "POST\n"
+            f"x-ca-timestamp:{timestamp}\n"
+            f"x-ca-nonce:{nonce}\n"
+            f"x-scope:{scope}\n"
+            f"x-client:{client}\n"
+            f"x-client-version:{client_version}\n"
+        )
+        signature = base64.b64encode(
+            hmac.new(ca_secret.encode("utf-8"), canonical.encode("utf-8"), hashlib.sha256).digest()
+        ).decode("utf-8")
+
+        headers = {
+            "accept": "application/json",
+            "content-type": "application/json;charset=UTF-8",
+            "origin": "https://manager.mfoodapp.com",
+            "referer": "https://manager.mfoodapp.com/",
+            "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36",
+            "x-app-code-name": "Mozilla",
+            "x-app-name": "Netscape",
+            "x-app-version": "5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36",
+            "x-browser-language": "zh",
+            "x-ca-key": "83579288",
+            "x-ca-nonce": nonce,
+            "x-ca-signature": signature,
+            "x-ca-timestamp": timestamp,
+            "x-city-id": "",
+            "x-city-name": "",
+            "x-client": client,
+            "x-client-version": client_version,
+            "x-ip": "",
+            "x-platform": "MacIntel",
+            "x-scope": scope,
+            "x-token": token,
+            "x-user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36",
+        }
+
+        req = urllib.request.Request(url, data=b"", headers=headers, method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                res_body = resp.read().decode("utf-8")
+                data = json.loads(res_body)
+
+                code = data.get("code")
+                if isinstance(code, int) and code < 0:
+                    return False, data.get("note") or data.get("message") or f"API error code {code}"
+                if isinstance(code, str) and code.startswith("-"):
+                    return False, data.get("note") or data.get("message") or f"API error code {code}"
+
+                payloads = [data, data.get("data"), data.get("result")]
+                for p in payloads:
+                    if isinstance(p, dict):
+                        user_name = p.get("userName") or p.get("name") or p.get("userId")
+                        if user_name:
+                            return True, str(user_name)
+                return True, "Success"
+        except urllib.error.HTTPError as exc:
+            try:
+                err_body = exc.read().decode("utf-8")
+                err_data = json.loads(err_body)
+                msg = err_data.get("note") or err_data.get("message") or f"HTTP Error {exc.code}"
+                return False, msg
+            except Exception:
+                return False, f"HTTP Error {exc.code}"
+        except Exception as exc:
+            return False, str(exc)
+
     def get_token(self, force_refresh: bool = False) -> dict[str, Any]:
         settings = MFoodSettings.load_private(self.db)["login"]
         if not settings["configured"]:

@@ -98,6 +98,11 @@ def run_legacy_python(script: str | Path, argv: list[str] | None = None) -> int:
     if not script_path.exists():
         raise SystemExit(f"legacy script not found: {script_path}")
     source = script_path.read_text(encoding="utf-8")
+    
+    # Enforce default socket timeout to prevent network hangs on slow APIs or proxies
+    import socket
+    socket.setdefaulttimeout(60)
+
     rewritten = rewrite_legacy_source(source, root, db_path())
     old_argv = sys.argv[:]
     old_path = sys.path[:]

@@ -42,30 +42,60 @@ def yesterday_str() -> str:
 
 def get_login_token(profile: str = "") -> str:
     from traeclaw.db import AppDatabase
-    from traeclaw.mfood.login import MFoodLogin
     from pathlib import Path
     
     proj_root = Path(os.environ.get("TRAECLAW_PROJECT_ROOT") or Path(__file__).resolve().parents[3])
     db_file = Path(os.environ.get("TRAECLAW_DB_PATH") or (proj_root / "code" / "data" / "traeclaw.sqlite3"))
     
     db = AppDatabase(db_file)
-    login = MFoodLogin(db, proj_root)
-    res = login.get_token()
-    token = to_text(res.get("token"))
+    token = db.get_setting("mfood.login.token", "").strip()
     if not token:
-        raise RuntimeError("mFood login returned empty token")
+        raise RuntimeError("mFood token not configured or empty in database")
     return token
 
 
 def post_json(headers: dict, payload: dict, url: str = URL) -> dict:
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     req = urllib.request.Request(url, data=body, headers=headers, method="POST")
-    with urllib.request.urlopen(req, timeout=45) as resp:
+    with urllib.request.urlopen(req, timeout=60) as resp:
         return json.loads(resp.read().decode("utf-8"))
 
 
-def build_headers(cfg: dict, x_merchant: str, x_token: str) -> dict:
-    base = dict(cfg.get("headers") or {})
+DEFAULT_HEADERS = {
+    "accept": "application/json",
+    "accept-language": "zh-CN,zh;q=0.9",
+    "content-type": "application/json;charset=UTF-8",
+    "origin": "https://merchant.mfoodapp.com",
+    "priority": "u=1, i",
+    "referer": "https://merchant.mfoodapp.com/",
+    "sec-ch-ua": '"Google Chrome";v="149", "Chromium";v="149", "Not)A;Brand";v="24"',
+    "sec-ch-ua-mobile": "?0",
+    "sec-ch-ua-platform": '"macOS"',
+    "sec-fetch-dest": "empty",
+    "sec-fetch-mode": "cors",
+    "sec-fetch-site": "same-site",
+    "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+    "x-ca-key": "83579288",
+    "x-device-id": "7892dbca-2fa9-4d04-bf6f-13d7deb04d29",
+    "x-scope": "manager",
+    "x-client": "web",
+    "x-client-version": "2.0.0",
+}
+
+DEFAULT_PAYLOAD = {
+    "status": "",
+    "yearMonth": "",
+    "fromMerchant": True,
+    "storeIds": [],
+    "pageNo": 1,
+    "pageSize": 20
+}
+
+
+def build_headers(cfg: dict, x_merchant: str, x_token: str, store_id: str = None) -> dict:
+    base = dict(DEFAULT_HEADERS)
+    if cfg.get("headers"):
+        base.update(cfg["headers"])
     timestamp = str(int(datetime.now(TZ).timestamp() * 1000))
     nonce = hashlib.md5((uuid.uuid4().hex + timestamp).encode("utf-8")).hexdigest()
     scope = to_text(base.get("x-scope") or "manager")
@@ -88,13 +118,20 @@ def build_headers(cfg: dict, x_merchant: str, x_token: str) -> dict:
     base["x-ca-signature"] = signature
     base["x-merchant"] = x_merchant
     base["x-token"] = x_token
+    base["x-platform"] = "rider"
+    if store_id:
+        base["x-store"] = store_id
+        base["x-storeid"] = store_id
     return base
 
 
 def payload_from_cfg(cfg: dict) -> dict:
-    payload = dict(cfg.get("payload") or {})
+    payload = dict(DEFAULT_PAYLOAD)
+    if cfg.get("payload"):
+        payload.update(cfg["payload"])
     payload["storeIds"] = []
     return payload
+
 
 
 def to_text(v: Any) -> str:
@@ -287,6 +324,12 @@ def persist_run(conn: sqlite3.Connection, target_date: str, root_merchant_id: st
     )
     run_id = cur.lastrowid
     for record in records:
+        db_payload = record.get("detail") or {}
+        if record.get("review_raw"):
+            db_payload = {
+                "detail_data": record.get("detail") or {},
+                "review_orders": record.get("review_raw"),
+            }
         cur.execute(
             """
             INSERT INTO merchant_summary_records (
@@ -306,7 +349,7 @@ def persist_run(conn: sqlite3.Connection, target_date: str, root_merchant_id: st
                 to_text(record.get("subsidyStoreReceiveAmtn")),
                 to_text(record.get("subsidyStoreReceiveAmtnNew")),
                 1 if record.get("has_issue") else 0,
-                json.dumps(record.get("detail") or {}, ensure_ascii=False),
+                json.dumps(db_payload, ensure_ascii=False),
             ),
         )
     conn.commit()
@@ -330,9 +373,7 @@ def yesterday_window_ms() -> tuple[int, int]:
 
 
 def build_review_headers(cfg: dict, x_merchant: str, x_token: str, store_id: str) -> dict:
-    headers = build_headers(cfg, x_merchant, x_token)
-    headers["x-store"] = store_id
-    headers["x-storeid"] = store_id
+    headers = build_headers(cfg, x_merchant, x_token, store_id)
     return headers
 
 
@@ -377,16 +418,41 @@ def review_has_orders(cfg: dict, merchant_id: str, store_id: str, login_token: s
 
 
 def render_issue(record: dict) -> str:
+    review_raw = record.get("review_raw") or {}
+    orders = []
+    if isinstance(review_raw, dict):
+        orders = review_raw.get("result") or review_raw.get("list") or review_raw.get("records") or []
+        if not isinstance(orders, list):
+            orders = []
+    elif isinstance(review_raw, list):
+        orders = review_raw
+    
+    order_summaries = []
+    for order in orders[:5]:
+        order_id = order.get("id") or order.get("tradeNo") or "未知"
+        amount = order.get("realPayAmt") or order.get("orderAmountAmt") or 0
+        pay_time = ""
+        if order.get("payTime"):
+            try:
+                pay_time = " " + datetime.fromtimestamp(order.get("payTime") / 1000, TZ).strftime("%H:%M:%S")
+            except Exception:
+                pass
+        order_summaries.append(f"  - 订单号: {order_id}, 实付金额: {amount}{pay_time}")
+    
+    if len(orders) > 5:
+        order_summaries.append(f"  - ... 还有 {len(orders) - 5} 笔订单")
+        
     lines = [
-        f"门店ID：{record.get('store_id') or ''}",
+        "商户对账分析门店问题",
+        f"门店id：{record.get('store_id') or ''}",
+        f"门店名：{record.get('store_name') or ''}",
         f"日期：{record.get('dateStr') or ''}",
         f"storeReceiveAmtn: {to_text(record.get('storeReceiveAmtn'))}",
         f"subsidyStoreReceiveAmtn: {to_text(record.get('subsidyStoreReceiveAmtn'))}",
         f"subsidyStoreReceiveAmtnNew: {to_text(record.get('subsidyStoreReceiveAmtnNew'))}",
+        f"提示：昨日营业额为 0，但复查发现有 {len(orders)} 笔有效订单：",
+        *order_summaries
     ]
-    review_raw = record.get("review_raw")
-    if review_raw:
-        lines.append(f"複查订单json：{json.dumps(review_raw, ensure_ascii=False)}")
     return "\n".join(lines)
 
 
@@ -405,11 +471,29 @@ def parse_http_error_detail(detail: str) -> str:
 def main() -> int:
     cfg = load_config()
     target_date = yesterday_str()
-    root_merchant_id = to_text(cfg.get("root_x_merchant"))
     token_profile = to_text(cfg.get("token_profile") or "default")
-    if not root_merchant_id:
-        print("需人工复核：缺少 root_x_merchant 配置")
-        return 2
+
+    configured_ids = cfg.get("store_ids") or cfg.get("payload", {}).get("storeIds") or cfg.get("merchant_ids") or cfg.get("payload", {}).get("merchantIds")
+    if isinstance(configured_ids, list):
+        configured_ids = [to_text(s) for s in configured_ids if to_text(s)]
+    else:
+        configured_ids = []
+
+    # Get root_merchant_id from configured merchant_ids, or fallback to default
+    cfg_merchant_ids = cfg.get("merchant_ids") or cfg.get("payload", {}).get("merchantIds")
+    if isinstance(cfg_merchant_ids, list):
+        cfg_merchant_ids = [to_text(s) for s in cfg_merchant_ids if to_text(s)]
+    else:
+        cfg_merchant_ids = []
+
+    if cfg_merchant_ids:
+        root_merchant_id = cfg_merchant_ids[0]
+    elif to_text(cfg.get("x-merchant") or cfg.get("merchant_id") or cfg.get("root_x_merchant")):
+        root_merchant_id = to_text(cfg.get("x-merchant") or cfg.get("merchant_id") or cfg.get("root_x_merchant"))
+    else:
+        root_merchant_id = "202307141644140647101"
+
+    configured_ids = [cid for cid in configured_ids if cid != root_merchant_id]
 
     conn = ensure_db()
     all_payload = {"target_date": target_date, "root_merchant_id": root_merchant_id, "token_profile": token_profile}
@@ -440,7 +524,18 @@ def main() -> int:
         stores = dedupe_store_rows(walk_for_stores(root_resp))
         upsert_stores(conn, stores)
 
-        merchant_ids = sorted({row["merchant_id"] for row in stores if row.get("merchant_id")})
+        if configured_ids:
+            merchant_ids = sorted({
+                row["merchant_id"]
+                for row in stores
+                if row.get("merchant_id") and (
+                    to_text(row.get("store_id")) in configured_ids or
+                    to_text(row.get("merchant_id")) in configured_ids
+                )
+            })
+        else:
+            merchant_ids = sorted({row["merchant_id"] for row in stores if row.get("merchant_id")})
+
         if not merchant_ids:
             merchant_ids = [root_merchant_id]
 
@@ -461,6 +556,10 @@ def main() -> int:
         for record in detail_records:
             date_str = to_text(record.get("dateStr"))
             if date_str[:10] == target_date:
+                store_id = to_text(record.get("store_id"))
+                merchant_id = to_text(record.get("merchant_id"))
+                if configured_ids and store_id not in configured_ids and merchant_id not in configured_ids:
+                    continue
                 record["has_issue"] = False
                 if is_zero(record.get("subsidyStoreReceiveAmtn")):
                     try:
@@ -502,6 +601,14 @@ def main() -> int:
             yesterday_records,
         )
         print(with_report_title(status, message))
+        if status == "ok":
+            print("数据正常")
+        elif status == "alert":
+            print(f"发现 {len(issues)} 家门店有对账数据异常，请人工核对")
+        elif status == "partial_error":
+            print("部分商户数据查询失败")
+        else:
+            print("查询失败，请检查错误日志")
         return 1 if status in {"alert", "partial_error", "error"} else 0
     finally:
         conn.close()
