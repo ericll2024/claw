@@ -63,7 +63,7 @@ def get_token():
     from pathlib import Path
     
     proj_root = Path(os.environ.get("TRAECLAW_PROJECT_ROOT") or Path(__file__).resolve().parents[3])
-    db_file = Path(os.environ.get("TRAECLAW_DB_PATH") or (proj_root / "code" / "data" / "traeclaw.sqlite3"))
+    db_file = Path(os.environ.get("TRAECLAW_DB_PATH") or (proj_root / "data" / "traeclaw.sqlite3"))
     
     db = AppDatabase(db_file)
     token = db.get_setting("mfood.login.token", "").strip()
@@ -78,7 +78,7 @@ def shence_first_row(sql):
     from pathlib import Path
     
     proj_root = Path(os.environ.get("TRAECLAW_PROJECT_ROOT") or Path(__file__).resolve().parents[3])
-    db_file = Path(os.environ.get("TRAECLAW_DB_PATH") or (proj_root / "code" / "data" / "traeclaw.sqlite3"))
+    db_file = Path(os.environ.get("TRAECLAW_DB_PATH") or (proj_root / "data" / "traeclaw.sqlite3"))
     
     db = AppDatabase(db_file)
     shence = MFoodShence(db)

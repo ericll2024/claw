@@ -1,6 +1,9 @@
 import json
 import sqlite3
+from argparse import Namespace
 
+from traeclaw.app import TraeclawApp
+from traeclaw.__main__ import build_app
 from traeclaw.db import AppDatabase
 
 
@@ -21,6 +24,9 @@ def test_initialize_creates_single_shared_schema(tmp_path):
     assert "task_runs" in tables
     assert "task_results" in tables
     assert "legacy_imports" in tables
+    assert "ai_sessions" in tables
+    assert "ai_messages" in tables
+    assert "ai_jobs" in tables
 
 
 def test_settings_round_trip_and_mask_secret(tmp_path):
@@ -134,3 +140,21 @@ def test_delete_run(tmp_path):
 
     assert len(db.get_runs("mfood.market_summary")) == 0
     assert len(db.get_task_results("mfood.market_summary")) == 0
+
+
+def test_build_app_uses_project_root_data_db_by_default(tmp_path):
+    app = build_app(
+        Namespace(
+            project_root=str(tmp_path),
+            db="",
+            no_import_state=True,
+        )
+    )
+
+    assert app.db.path == tmp_path / "data" / "traeclaw.sqlite3"
+
+
+def test_traeclaw_app_uses_project_root_data_db_by_default(tmp_path):
+    app = TraeclawApp(project_root=tmp_path, import_legacy_state=False)
+
+    assert app.db.path == tmp_path / "data" / "traeclaw.sqlite3"

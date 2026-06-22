@@ -137,7 +137,7 @@ def test_task_runner_config_sync(tmp_path):
     db.initialize()
 
     # Put a mock config into the database
-    config_rel_path = "code/state/facebook/fb_groups.json"
+    config_rel_path = "state/facebook/fb_groups.json"
     mock_config_content = '{"groups": [123, 456]}'
     db.set_setting(f"file:{config_rel_path}", mock_config_content)
 
@@ -167,7 +167,7 @@ def test_task_runner_config_sync(tmp_path):
     # Verify that the file was deleted from disk
     assert not (tmp_path / config_rel_path).exists()
     # Verify parent directory was cleaned up recursively
-    assert not (tmp_path / "code" / "state" / "facebook").exists()
+    assert not (tmp_path / "state" / "facebook").exists()
 
     # Verify that the updated config was saved back to the database
     updated_content = db.get_setting(f"file:{config_rel_path}")
@@ -288,7 +288,6 @@ def test_mfood_maskphone_monitor_only_alert_on_threshold(tmp_path, monkeypatch):
     assert result["status"] == "failed"
     assert result["notify_status"] == "skipped"
     mock_send.assert_not_called()
-
 
 
 

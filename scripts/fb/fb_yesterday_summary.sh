@@ -5,8 +5,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="${TRAECLAW_PROJECT_ROOT:-$(cd "$SCRIPT_DIR/../../.." && pwd)}"
 
 # Default files relative to project root
-STATE_FILE="${FB_STATE_FILE:-$PROJECT_ROOT/code/state/facebook/fb_storage_state.json}"
-OUTPUT_DIR="${FB_OUTPUT_DIR:-$PROJECT_ROOT/code/tmp/fb_yesterday_summary}"
+STATE_FILE="${FB_STATE_FILE:-$PROJECT_ROOT/state/facebook/fb_storage_state.json}"
+OUTPUT_DIR="${FB_OUTPUT_DIR:-$PROJECT_ROOT/tmp/fb_yesterday_summary}"
 
 # Check OS for default Chrome path
 if [[ "$OSTYPE" == "darwin"* ]]; then
@@ -24,5 +24,5 @@ exec node "$SCRIPT_DIR/fb_yesterday_summary.js" \
   --state-file "$STATE_FILE" \
   --output-dir "$OUTPUT_DIR" \
   --chrome-path "$CHROME_PATH" \
-  --config "$PROJECT_ROOT/code/state/facebook/fb_groups.json" \
+  --config "$PROJECT_ROOT/state/facebook/fb_groups.json" \
   "$@"

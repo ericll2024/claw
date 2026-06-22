@@ -137,8 +137,14 @@ class TraeclawRequestHandler(BaseHTTPRequestHandler):
         if path == "/api/settings/telegram":
             self.write_json({"settings": self.app.get_telegram_settings()})
             return
+        if path == "/api/settings/ai":
+            self.write_json({"settings": self.app.get_ai_settings()})
+            return
         if path == "/api/telegram/listener":
             self.write_json({"listener": self.app.get_telegram_listener()})
+            return
+        if path == "/api/telegram/ai-jobs":
+            self.write_json({"jobs": self.app.list_ai_jobs(limit=50)})
             return
         if path == "/api/settings/mfood":
             self.write_json({"settings": self.app.get_mfood_settings()})
@@ -241,6 +247,23 @@ class TraeclawRequestHandler(BaseHTTPRequestHandler):
             settings = self.app.save_telegram_settings(payload)
             self.write_json({"settings": settings})
             return
+        if path == "/api/settings/ai":
+            payload = self.read_json()
+            settings = self.app.save_ai_settings(payload)
+            self.write_json({"settings": settings})
+            return
+        if path == "/api/settings/ai/test":
+            payload = self.read_json()
+            try:
+                result = self.app.test_ai_settings(payload)
+            except ValueError as exc:
+                self.write_json({"error": str(exc)}, status=400)
+                return
+            except Exception as exc:
+                self.write_json({"error": str(exc)}, status=502)
+                return
+            self.write_json({"result": result})
+            return
         if path == "/api/telegram/listener":
             payload = self.read_json()
             try:
@@ -260,6 +283,22 @@ class TraeclawRequestHandler(BaseHTTPRequestHandler):
                 self.write_json({"error": str(exc)}, status=502)
                 return
             self.write_json({"listener": listener})
+            return
+        if path.startswith("/api/telegram/ai-jobs/") and path.endswith("/retry"):
+            job_id_text = path[len("/api/telegram/ai-jobs/") : -len("/retry")]
+            try:
+                job_id = int(job_id_text)
+                job = self.app.retry_ai_job(job_id)
+            except ValueError:
+                self.write_json({"error": "Invalid AI job ID"}, status=400)
+                return
+            except KeyError as exc:
+                self.write_json({"error": str(exc)}, status=404)
+                return
+            except Exception as exc:
+                self.write_json({"error": str(exc)}, status=500)
+                return
+            self.write_json({"job": job})
             return
         if path == "/api/settings/mfood":
             payload = self.read_json()

@@ -5,6 +5,8 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from .ai import AiSettings, test_deepseek_settings
+from .ai_dispatcher import TelegramAiDispatcher
 from .db import AppDatabase, mask_secret
 from .mfood.config import MFoodSettings
 from .runner import TaskRunner, _payload_has_alert, _text_has_alert
@@ -24,10 +26,11 @@ class TraeclawApp:
         import_legacy_state: bool = True,
     ):
         self.project_root = Path(project_root).resolve()
-        self.db = db or AppDatabase(self.project_root / "code" / "data" / "traeclaw.sqlite3")
+        self.db = db or AppDatabase(self.project_root / "data" / "traeclaw.sqlite3")
         self.import_legacy_state = import_legacy_state
         self.runner = TaskRunner(self.db, self.project_root)
         self.telegram_listener = TelegramUpdateListener(self.db)
+        self.ai_dispatcher = TelegramAiDispatcher(self)
 
     def initialize(self) -> None:
         self.db.initialize()
@@ -54,7 +57,7 @@ class TraeclawApp:
                     self.db.set_setting(f"file:{rel_path}", content)
                     file_path.unlink()
                     parent = file_path.parent
-                    while parent != self.project_root / "code" / "state" and parent != self.project_root:
+                    while parent != self.project_root / "state" and parent != self.project_root:
                         try:
                             parent.rmdir()
                             parent = parent.parent
@@ -66,15 +69,18 @@ class TraeclawApp:
     def start_background_services(self) -> None:
         if self.db.get_setting("telegram.listener_enabled", "0") == "1":
             self.telegram_listener.start()
+        if AiSettings.load_private(self.db)["enabled"]:
+            self.ai_dispatcher.start()
 
     def stop_background_services(self) -> None:
         self.telegram_listener.stop()
+        self.ai_dispatcher.stop()
 
     def import_legacy_sources(self) -> list[dict[str, Any]]:
         sources = [
-            self.project_root / "code" / "state" / "cp" / "doublecolor.db",
-            self.project_root / "code" / "state" / "mfdb" / "maskphone_monitor.db",
-            self.project_root / "code" / "state" / "scjk" / "shence_monitor.db",
+            self.project_root / "state" / "cp" / "doublecolor.db",
+            self.project_root / "state" / "mfdb" / "maskphone_monitor.db",
+            self.project_root / "state" / "scjk" / "shence_monitor.db",
         ]
         return [self.db.import_sqlite_tables(source) for source in sources if source.exists()]
 
@@ -389,8 +395,8 @@ class TraeclawApp:
                 errors.append("神策项目未配置")
 
         elif task_id == "facebook.yesterday_summary":
-            if not has_setting("file:code/state/facebook/fb_groups.json"):
-                errors.append("Facebook 群组配置文件未上传（key: file:code/state/facebook/fb_groups.json）")
+            if not has_setting("file:state/facebook/fb_groups.json"):
+                errors.append("Facebook 群组配置文件未上传（key: file:state/facebook/fb_groups.json）")
 
         return errors
 
@@ -443,6 +449,28 @@ class TraeclawApp:
         task = get_task(task_id)
         return self.runner.run(task, trigger_type=trigger_type, send_to_telegram=send_to_telegram)
 
+    def resolve_task_for_chat_id(self, chat_id: str) -> TaskDefinition:
+        clean_chat_id = str(chat_id or "").strip()
+        matches = []
+        for task in list_tasks():
+            if self.db.get_setting(f"task.{task.id}.telegram_chat_id", "").strip() == clean_chat_id:
+                matches.append(task)
+        if not matches:
+            raise KeyError(f"Unknown task chat mapping: {clean_chat_id}")
+        if len(matches) > 1:
+            raise ValueError(f"Multiple tasks mapped to chat_id {clean_chat_id}")
+        return matches[0]
+
+    def get_ai_settings(self) -> dict[str, Any]:
+        return AiSettings.load_public(self.db)
+
+    def save_ai_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
+        AiSettings.save(self.db, payload)
+        return self.get_ai_settings()
+
+    def test_ai_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return test_deepseek_settings(self.db, payload)
+
     def get_telegram_settings(self) -> dict[str, Any]:
         return TelegramConfig.load_public(self.db)
 
@@ -463,9 +491,17 @@ class TraeclawApp:
 
     def poll_telegram_listener(self) -> dict[str, Any]:
         result = self.telegram_listener.poll_once()
+        if AiSettings.load_private(self.db)["enabled"]:
+            self.ai_dispatcher.process_pending(limit=20)
         status = self.telegram_listener.status()
         status["poll"] = result
         return status
+
+    def list_ai_jobs(self, limit: int = 50) -> list[dict[str, Any]]:
+        return self.db.list_ai_jobs(limit=limit)
+
+    def retry_ai_job(self, job_id: int) -> dict[str, Any]:
+        return self.ai_dispatcher.retry_job(job_id)
 
     def get_mfood_settings(self) -> dict[str, Any]:
         settings = MFoodSettings.load_public(self.db)
@@ -539,4 +575,3 @@ def _task_has_alert(
         )
         return _text_has_alert(text)
     return False
-

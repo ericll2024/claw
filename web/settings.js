@@ -3,6 +3,16 @@ const telegramEnabled = document.querySelector("#telegramEnabled");
 const telegramToken = document.querySelector("#telegramToken");
 const telegramChat = document.querySelector("#telegramChat");
 const telegramState = document.querySelector("#telegramState");
+const aiForm = document.querySelector("#aiForm");
+const aiState = document.querySelector("#aiState");
+const aiEnabled = document.querySelector("#aiEnabled");
+const aiDefaultProvider = document.querySelector("#aiDefaultProvider");
+const aiDeepseekApiBase = document.querySelector("#aiDeepseekApiBase");
+const aiDeepseekApiKey = document.querySelector("#aiDeepseekApiKey");
+const aiDeepseekModel = document.querySelector("#aiDeepseekModel");
+const aiGeminiCliEnabled = document.querySelector("#aiGeminiCliEnabled");
+const aiGeminiCliCommand = document.querySelector("#aiGeminiCliCommand");
+const testDeepseekBtn = document.querySelector("#testDeepseekBtn");
 const mfoodForm = document.querySelector("#mfoodForm");
 const mfoodState = document.querySelector("#mfoodState");
 
@@ -62,6 +72,21 @@ async function loadTelegram() {
   telegramToken.value = "";
   telegramState.textContent = settings.configured ? "已配置" : "未配置";
   telegramState.className = settings.configured ? "badge success" : "badge";
+}
+
+async function loadAiSettings() {
+  const payload = await api("/api/settings/ai");
+  const settings = payload.settings;
+  aiEnabled.checked = Boolean(settings.enabled);
+  aiDefaultProvider.value = settings.default_provider || "deepseek";
+  aiDeepseekApiBase.value = settings.deepseek_api_base || "";
+  aiDeepseekApiKey.value = "";
+  aiDeepseekModel.value = settings.deepseek_model || "deepseek-chat";
+  aiGeminiCliEnabled.checked = Boolean(settings.gemini_cli_enabled);
+  aiGeminiCliCommand.value = settings.gemini_cli_command || "gemini";
+  const configured = settings.deepseek_api_key_configured || settings.gemini_cli_enabled;
+  aiState.textContent = configured ? "已配置" : "未配置";
+  aiState.className = configured ? "badge success" : "badge";
 }
 
 async function loadMFood() {
@@ -135,6 +160,51 @@ telegramForm.addEventListener("submit", (event) => {
       return loadTelegram();
     })
     .catch(showError);
+});
+
+aiForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  api("/api/settings/ai", {
+    method: "POST",
+    body: JSON.stringify({
+      enabled: aiEnabled.checked,
+      default_provider: aiDefaultProvider.value,
+      deepseek_api_base: aiDeepseekApiBase.value.trim(),
+      deepseek_api_key: aiDeepseekApiKey.value.trim(),
+      deepseek_model: aiDeepseekModel.value.trim(),
+      gemini_cli_enabled: aiGeminiCliEnabled.checked,
+      gemini_cli_command: aiGeminiCliCommand.value.trim(),
+    }),
+  })
+    .then(() => {
+      aiDeepseekApiKey.value = "";
+      showToast("AI 配置保存成功", "success");
+      return loadAiSettings();
+    })
+    .catch(showError);
+});
+
+testDeepseekBtn.addEventListener("click", async () => {
+  testDeepseekBtn.disabled = true;
+  const originalText = testDeepseekBtn.textContent;
+  testDeepseekBtn.textContent = "测试中...";
+  try {
+    const payload = await api("/api/settings/ai/test", {
+      method: "POST",
+      body: JSON.stringify({
+        deepseek_api_base: aiDeepseekApiBase.value.trim(),
+        deepseek_api_key: aiDeepseekApiKey.value.trim(),
+        deepseek_model: aiDeepseekModel.value.trim(),
+      }),
+    });
+    const reply = payload.result?.reply || "";
+    showToast(`DeepSeek 返回: ${reply || "(空回复)"}`, "success");
+  } catch (err) {
+    showError(err);
+  } finally {
+    testDeepseekBtn.disabled = false;
+    testDeepseekBtn.textContent = originalText;
+  }
 });
 
 const mfoodLoginForm = document.querySelector("#mfoodLoginForm");
@@ -264,6 +334,7 @@ const listenerLastPoll = document.querySelector("#listenerLastPoll");
 const listenerErrorContainer = document.querySelector("#listenerErrorContainer");
 const listenerErrorText = document.querySelector("#listenerErrorText");
 const updatesList = document.querySelector("#updatesList");
+const aiJobsList = document.querySelector("#aiJobsList");
 
 let listenerPollInterval = null;
 let isListenerRunning = false;
@@ -292,10 +363,15 @@ listenerModal.addEventListener("click", (event) => {
 
 async function loadListener() {
   try {
-    const payload = await api("/api/telegram/listener");
-    updateListenerUI(payload.listener);
+    const [listenerPayload, jobsPayload] = await Promise.all([
+      api("/api/telegram/listener"),
+      api("/api/telegram/ai-jobs"),
+    ]);
+    updateListenerUI(listenerPayload.listener);
+    renderAiJobs(jobsPayload.jobs || []);
   } catch (err) {
     updatesList.innerHTML = `<div class="empty" style="color: var(--red);">加載失敗: ${escapeHtml(err.message)}</div>`;
+    aiJobsList.innerHTML = `<div class="empty" style="color: var(--red);">加載失敗: ${escapeHtml(err.message)}</div>`;
   }
 }
 
@@ -366,6 +442,52 @@ function renderUpdates(updates) {
   }).join('');
 }
 
+function aiJobStatusLabel(status) {
+  switch (status) {
+    case "queued":
+      return "排队中";
+    case "running":
+      return "处理中";
+    case "rolled_back":
+      return "已回滚";
+    case "rerun_success":
+      return "已成功重跑";
+    case "failed":
+      return "失败";
+    default:
+      return status || "未知";
+  }
+}
+
+function renderAiJobs(jobs) {
+  if (!jobs.length) {
+    aiJobsList.innerHTML = '<div class="empty">暂无 AI 作业</div>';
+    return;
+  }
+  aiJobsList.innerHTML = jobs.map((job) => {
+    const createdAt = job.created_at ? new Date(job.created_at).toLocaleString() : "未知时间";
+    const touched = (job.files_touched || []).length ? job.files_touched.join(", ") : "无";
+    return `
+      <div class="update-item">
+        <div class="update-item-header">
+          <span class="update-item-sender">${escapeHtml(job.task_id || "未知任务")}</span>
+          <span>${createdAt}</span>
+        </div>
+        <div class="update-item-text">${escapeHtml(job.request_text || "无请求内容")}</div>
+        <div class="update-item-meta" style="align-items: flex-start; flex-direction: column; gap: 6px;">
+          <span>状态: ${escapeHtml(aiJobStatusLabel(job.status))} | Provider: ${escapeHtml(job.provider || "-")}</span>
+          <span>修改文件: ${escapeHtml(touched)}</span>
+          <span>验证: ${escapeHtml(job.verification_status || "未执行")}</span>
+          ${job.reply_text ? `<span>回复: ${escapeHtml(job.reply_text)}</span>` : ""}
+          <div style="display: flex; gap: 8px;">
+            <button class="button" data-retry-ai-job="${job.id}">重试</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
 function escapeHtml(str) {
   if (!str) return '';
   return str.replace(/&/g, '&amp;')
@@ -417,6 +539,8 @@ function startStatusPolling() {
         listenerErrorContainer.style.display = "none";
       }
       renderUpdates(payload.listener.updates || []);
+      const jobsPayload = await api("/api/telegram/ai-jobs");
+      renderAiJobs(jobsPayload.jobs || []);
       if (!payload.listener.running) {
         stopStatusPolling();
       }
@@ -455,6 +579,8 @@ pollOnceBtn.addEventListener("click", async () => {
       method: "POST",
     });
     updateListenerUI(payload.listener);
+    const jobsPayload = await api("/api/telegram/ai-jobs");
+    renderAiJobs(jobsPayload.jobs || []);
   } catch (err) {
     showError(err);
   } finally {
@@ -462,7 +588,27 @@ pollOnceBtn.addEventListener("click", async () => {
   }
 });
 
-Promise.all([loadTelegram(), loadMFood()]).catch(showError);
+listenerModal.addEventListener("click", async (event) => {
+  const retryButton = event.target.closest("[data-retry-ai-job]");
+  if (!retryButton) {
+    return;
+  }
+  retryButton.disabled = true;
+  try {
+    await api(`/api/telegram/ai-jobs/${retryButton.dataset.retryAiJob}/retry`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    showToast("AI 作业已重试", "success");
+    await loadListener();
+  } catch (err) {
+    showError(err);
+  } finally {
+    retryButton.disabled = false;
+  }
+});
+
+Promise.all([loadTelegram(), loadAiSettings(), loadMFood()]).catch(showError);
 
 const logoutBtn = document.querySelector("#logoutBtn");
 if (logoutBtn) {

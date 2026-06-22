@@ -7,17 +7,17 @@ from pathlib import Path
 # Add project root to python path to import traeclaw modules
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parents[2]
-sys.path.insert(0, str(PROJECT_ROOT / "code"))
+sys.path.insert(0, str(PROJECT_ROOT))
 
 from traeclaw.db import AppDatabase
 
 def main():
-    db_file = os.environ.get("TRAECLAW_DB_PATH") or str(PROJECT_ROOT / "code" / "data" / "traeclaw.sqlite3")
+    db_file = os.environ.get("TRAECLAW_DB_PATH") or str(PROJECT_ROOT / "data" / "traeclaw.sqlite3")
     db = AppDatabase(db_file)
     
     # Sync settings to disk
-    state_rel = "code/state/facebook/fb_storage_state.json"
-    groups_rel = "code/state/facebook/fb_groups.json"
+    state_rel = "state/facebook/fb_storage_state.json"
+    groups_rel = "state/facebook/fb_groups.json"
     
     state_file = PROJECT_ROOT / state_rel
     groups_file = PROJECT_ROOT / groups_rel
@@ -61,7 +61,7 @@ def main():
             
         # Clean up empty parent directories
         parent = state_file.parent
-        while parent != PROJECT_ROOT / "code" / "state" and parent != PROJECT_ROOT:
+        while parent != PROJECT_ROOT / "state" and parent != PROJECT_ROOT:
             try:
                 parent.rmdir()
                 parent = parent.parent

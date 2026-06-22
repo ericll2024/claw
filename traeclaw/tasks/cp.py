@@ -20,11 +20,11 @@ def project_root() -> Path:
 def db_path() -> Path:
     if os.environ.get("TRAECLAW_DB_PATH"):
         return Path(os.environ["TRAECLAW_DB_PATH"]).resolve()
-    return project_root() / "code" / "data" / "traeclaw.sqlite3"
+    return project_root() / "data" / "traeclaw.sqlite3"
 
 
 def _load_cp_core():
-    scripts_dir = project_root() / "code" / "scripts" / "cp"
+    scripts_dir = project_root() / "scripts" / "cp"
     if str(scripts_dir) not in sys.path:
         sys.path.insert(0, str(scripts_dir))
     import backtest_ssq  # type: ignore
@@ -51,7 +51,7 @@ def predict(force: bool = False) -> dict[str, Any]:
 
 
 def fetch_latest() -> dict[str, Any]:
-    script = project_root() / "code" / "scripts" / "cp" / "fetch_ssq.py"
+    script = project_root() / "scripts" / "cp" / "fetch_ssq.py"
     completed = subprocess.run(
         [
             sys.executable,

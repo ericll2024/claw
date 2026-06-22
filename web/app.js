@@ -4,6 +4,7 @@ const agentCount = document.querySelector("#agentCount");
 const refreshBtn = document.querySelector("#refreshBtn");
 const sidebarToggleBtn = document.querySelector("#sidebarToggleBtn");
 const layoutContainer = document.querySelector(".layout");
+const telegramListenerStatus = document.querySelector("#telegramListenerStatus");
 
 const scheduleModal = document.querySelector("#scheduleModal");
 const scheduleModalBody = document.querySelector("#scheduleModalBody");
@@ -152,6 +153,29 @@ async function api(path, options = {}) {
     throw new Error(payload.error || `HTTP ${response.status}`);
   }
   return payload;
+}
+
+async function loadTelegramListenerStatus() {
+  if (!telegramListenerStatus) {
+    return;
+  }
+  try {
+    const payload = await api("/api/telegram/listener");
+    const listener = payload.listener || {};
+    if (listener.running) {
+      telegramListenerStatus.textContent = "Telegram 监听中";
+      telegramListenerStatus.className = "badge success";
+    } else if (listener.enabled) {
+      telegramListenerStatus.textContent = "Telegram 待启动";
+      telegramListenerStatus.className = "badge running";
+    } else {
+      telegramListenerStatus.textContent = "Telegram 未监听";
+      telegramListenerStatus.className = "badge";
+    }
+  } catch (error) {
+    telegramListenerStatus.textContent = "Telegram 状态异常";
+    telegramListenerStatus.className = "badge failed";
+  }
 }
 
 function statusBadge(status, enabled = true) {
@@ -658,6 +682,7 @@ function renderScheduleEditor(task) {
 async function loadTasks() {
   refreshBtn.disabled = true;
   try {
+    await loadTelegramListenerStatus();
     const payload = await api(`/api/tasks?t=${Date.now()}`);
     agents = payload.agents || groupTasks(payload.tasks || []);
     if (!selectedAgentId || !agents.some((agent) => agent.id === selectedAgentId)) {

@@ -101,7 +101,7 @@ class MFoodOrderMonitor:
                 manager_password_md5=manager_password_md5,
             )
             # Try to load thresholds from the external configuration file first
-            config_path = Path("code/state/mfdb/order_monitor_config.json")
+            config_path = Path("state/mfdb/order_monitor_config.json")
             ext_takeout_threshold = None
             ext_market_threshold = None
             if config_path.exists():
@@ -255,7 +255,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output-dir", default="")
     args = parser.parse_args(argv)
     root = Path(os.environ.get("TRAECLAW_PROJECT_ROOT", Path(__file__).resolve().parents[3])).resolve()
-    db_path = Path(os.environ.get("TRAECLAW_DB_PATH", root / "code" / "data" / "traeclaw.sqlite3"))
+    db_path = Path(os.environ.get("TRAECLAW_DB_PATH", root / "data" / "traeclaw.sqlite3"))
     db = AppDatabase(db_path)
     db.initialize()
     try:

@@ -70,17 +70,16 @@ class TelegramNotifier:
     chat_id: str
     post_json: Callable[[str, dict[str, Any], int], dict[str, Any]] = post_json
 
-    def send_message(self, text: str) -> dict[str, Any]:
+    def send_message(self, text: str, message_thread_id: int | None = None) -> dict[str, Any]:
         url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
-        return self.post_json(
-            url,
-            {
-                "chat_id": self.chat_id,
-                "text": text,
-                "disable_web_page_preview": True,
-            },
-            20,
-        )
+        payload = {
+            "chat_id": self.chat_id,
+            "text": text,
+            "disable_web_page_preview": True,
+        }
+        if message_thread_id is not None:
+            payload["message_thread_id"] = message_thread_id
+        return self.post_json(url, payload, 20)
 
 
 class TelegramUpdateListener:

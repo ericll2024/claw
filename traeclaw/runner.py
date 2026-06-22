@@ -13,26 +13,26 @@ from .telegram import TelegramConfig, TelegramNotifier
 
 TASK_FILE_MAP = {
     "mfood.takeout_business_analysis": [
-        "code/state/mfdb/takeout_business_analysis_check_config.json",
+        "state/mfdb/takeout_business_analysis_check_config.json",
     ],
     "mfood.market_business_analysis": [
-        "code/state/mfdb/market_business_analysis_check_config.json",
+        "state/mfdb/market_business_analysis_check_config.json",
     ],
     "mfood.merchant_summary": [
-        "code/state/mfdb/merchant_summary_check_config.json",
+        "state/mfdb/merchant_summary_check_config.json",
     ],
     "mfood.market_summary": [
-        "code/state/mfdb/market_summary_check_config.json",
+        "state/mfdb/market_summary_check_config.json",
     ],
     "facebook.yesterday_summary": [
-        "code/state/facebook/fb_groups.json",
-        "code/state/facebook/fb_storage_state.json",
+        "state/facebook/fb_groups.json",
+        "state/facebook/fb_storage_state.json",
     ],
     "mfood.order_monitor": [
-        "code/state/mfdb/order_monitor_config.json",
+        "state/mfdb/order_monitor_config.json",
     ],
     "mfood.maskphone_monitor": [
-        "code/state/mfdb/maskphone_monitor_config.json",
+        "state/mfdb/maskphone_monitor_config.json",
     ],
 }
 
@@ -89,9 +89,9 @@ class TaskRunner:
                         content = file_path.read_text(encoding="utf-8")
                         self.db.set_setting(f"file:{rel_path}", content)
                         file_path.unlink()
-                        # Clean up empty parent directories up to code/state
+                        # Clean up empty parent directories up to state
                         parent = file_path.parent
-                        while parent != self.project_root / "code" / "state" and parent != self.project_root:
+                        while parent != self.project_root / "state" and parent != self.project_root:
                             try:
                                 parent.rmdir()
                                 parent = parent.parent

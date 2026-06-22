@@ -49,6 +49,17 @@ def test_tasks_api_returns_registered_tasks_and_latest_run(tmp_path):
     assert "next_run_at" in cp_task
 
 
+def test_index_page_shows_telegram_listener_status_slot(tmp_path):
+    httpd, base_url = run_test_server(tmp_path)
+    try:
+        html = request_text(base_url, "/")
+    finally:
+        httpd.shutdown()
+
+    assert 'id="telegramListenerStatus"' in html
+    assert "Telegram" in html
+
+
 def test_tasks_api_groups_tasks_by_folder_agent(tmp_path):
     httpd, base_url = run_test_server(tmp_path)
     try:
@@ -58,12 +69,12 @@ def test_tasks_api_groups_tasks_by_folder_agent(tmp_path):
 
     agents = {agent["id"]: agent for agent in payload["agents"]}
     assert "cp" in agents
-    assert agents["cp"]["folder"] == "code/scripts/cp"
+    assert agents["cp"]["folder"] == "scripts/cp"
     assert agents["cp"]["task_count"] == 2
     assert [task["id"] for task in agents["cp"]["tasks"]] == ["cp.predict", "cp.check_result"]
     assert agents["cp"]["schedule_summary"] == "每天 18:00 / 每天 22:00"
-    assert agents["mFood"]["folder"] == "code/scripts/mFood"
-    assert agents["fb"]["folder"] == "code/scripts/fb"
+    assert agents["mFood"]["folder"] == "scripts/mFood"
+    assert agents["fb"]["folder"] == "scripts/fb"
 
 
 def test_task_group_alias_api_changes_display_name(tmp_path):
@@ -246,6 +257,133 @@ def test_telegram_settings_api_round_trip(tmp_path):
     
     assert saved_clear_chat["settings"]["bot_token"] == "************oken"  # 原 token 仍保留
     assert loaded_clear_chat["settings"]["chat_id"] == ""  # chat_id 被成功清空了
+
+
+def test_ai_settings_api_round_trip(tmp_path):
+    httpd, base_url = run_test_server(tmp_path)
+    try:
+        saved = request_json(
+            base_url,
+            "/api/settings/ai",
+            method="POST",
+            payload={
+                "enabled": True,
+                "default_provider": "deepseek",
+                "deepseek_api_base": "https://api.deepseek.com",
+                "deepseek_api_key": "deepseek-secret-key",
+                "deepseek_model": "deepseek-chat",
+                "gemini_cli_enabled": True,
+                "gemini_cli_command": "gemini",
+            },
+        )
+        loaded = request_json(base_url, "/api/settings/ai")
+    finally:
+        httpd.shutdown()
+
+    assert saved["settings"]["enabled"] is True
+    assert loaded["settings"]["default_provider"] == "deepseek"
+    assert loaded["settings"]["deepseek_api_base"] == "https://api.deepseek.com"
+    assert loaded["settings"]["deepseek_api_key"] == "************-key"
+    assert loaded["settings"]["deepseek_api_key_configured"] is True
+    assert loaded["settings"]["deepseek_model"] == "deepseek-chat"
+    assert loaded["settings"]["gemini_cli_enabled"] is True
+    assert loaded["settings"]["gemini_cli_command"] == "gemini"
+
+
+def test_ai_jobs_api_lists_and_retries(tmp_path):
+    db = AppDatabase(tmp_path / "app.sqlite3")
+    app = TraeclawApp(project_root=tmp_path, db=db, import_legacy_state=False)
+    app.initialize()
+    session = db.get_or_create_ai_session("cp.predict", "-1001", None)
+    job_id = db.create_ai_job(
+        session["id"],
+        301,
+        "cp.predict",
+        "deepseek",
+        "failed",
+        "请修一下",
+    )
+    db.update_ai_job(
+        job_id,
+        files_touched=["code/scripts/cp/cp_prediction_core.py"],
+        verification_status="failed",
+        verification_output="traceback",
+        reply_text="失败了",
+    )
+
+    retried_jobs = []
+
+    def fake_retry(target_job_id: int):
+        retried_jobs.append(target_job_id)
+        return {
+            "id": 999,
+            "task_id": "cp.predict",
+            "status": "rerun_success",
+            "provider": "deepseek",
+        }
+
+    app.retry_ai_job = fake_retry
+
+    httpd = make_server(("127.0.0.1", 0), app)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    base_url = f"http://127.0.0.1:{httpd.server_address[1]}"
+    try:
+        listed = request_json(base_url, "/api/telegram/ai-jobs")
+        retried = request_json(
+            base_url,
+            f"/api/telegram/ai-jobs/{job_id}/retry",
+            method="POST",
+            payload={},
+        )
+    finally:
+        httpd.shutdown()
+
+    assert listed["jobs"][0]["task_id"] == "cp.predict"
+    assert listed["jobs"][0]["files_touched"] == ["code/scripts/cp/cp_prediction_core.py"]
+    assert retried_jobs == [job_id]
+    assert retried["job"]["id"] == 999
+
+
+def test_ai_settings_test_endpoint(tmp_path):
+    db = AppDatabase(tmp_path / "app.sqlite3")
+    app = TraeclawApp(project_root=tmp_path, db=db, import_legacy_state=False)
+    app.initialize()
+
+    called_payloads = []
+
+    def fake_test(payload: dict):
+        called_payloads.append(payload)
+        return {
+            "ok": True,
+            "provider": "deepseek",
+            "model": payload["deepseek_model"],
+            "reply": "hi there",
+        }
+
+    app.test_ai_settings = fake_test
+
+    httpd = make_server(("127.0.0.1", 0), app)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    base_url = f"http://127.0.0.1:{httpd.server_address[1]}"
+    try:
+        tested = request_json(
+            base_url,
+            "/api/settings/ai/test",
+            method="POST",
+            payload={
+                "deepseek_api_base": "https://api.deepseek.com",
+                "deepseek_api_key": "secret",
+                "deepseek_model": "deepseek-v4-flash",
+            },
+        )
+    finally:
+        httpd.shutdown()
+
+    assert called_payloads[0]["deepseek_model"] == "deepseek-v4-flash"
+    assert tested["result"]["ok"] is True
+    assert tested["result"]["reply"] == "hi there"
 
 
 def test_telegram_listener_api(tmp_path):

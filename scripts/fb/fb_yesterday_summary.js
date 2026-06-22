@@ -44,8 +44,8 @@ const DEFAULT_GROUPS = [
 ];
 
 const PROJECT_ROOT = process.env.TRAECLAW_PROJECT_ROOT || path.resolve(__dirname, '../../..');
-const DEFAULT_STATE_FILE = path.join(PROJECT_ROOT, 'code/state/facebook/fb_storage_state.json');
-const DEFAULT_OUTPUT_DIR = path.join(PROJECT_ROOT, 'code/tmp/fb_yesterday_summary');
+const DEFAULT_STATE_FILE = path.join(PROJECT_ROOT, 'state/facebook/fb_storage_state.json');
+const DEFAULT_OUTPUT_DIR = path.join(PROJECT_ROOT, 'tmp/fb_yesterday_summary');
 const DEFAULT_CHROME = os.platform() === 'darwin'
   ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
   : '/usr/bin/google-chrome-stable';

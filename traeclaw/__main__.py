@@ -15,7 +15,7 @@ def default_project_root() -> Path:
 
 def build_app(args) -> TraeclawApp:
     root = Path(args.project_root).resolve() if args.project_root else default_project_root()
-    db_path = Path(args.db).resolve() if args.db else root / "code" / "data" / "traeclaw.sqlite3"
+    db_path = Path(args.db).resolve() if args.db else root / "data" / "traeclaw.sqlite3"
     from .db import AppDatabase
 
     return TraeclawApp(root, db=AppDatabase(db_path), import_legacy_state=not args.no_import_state)

@@ -10,7 +10,7 @@
     <header class="topbar">
       <div>
         <h1>设置</h1>
-        <p id="subtitle">通知和 mFood 技能配置</p>
+        <p id="subtitle">通知、AI 和 mFood 技能配置</p>
       </div>
       <div class="topbar-actions">
         <a class="button" href="/">返回看板</a>
@@ -40,6 +40,50 @@
           <div class="form-actions" style="gap: 8px;">
             <button class="button primary" type="submit">保存 Telegram 配置</button>
             <button id="openListenerBtn" class="button" type="button">消息监听</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="panel settings-wide">
+        <div class="section-head">
+          <h2>AI</h2>
+          <span id="aiState" class="badge">未配置</span>
+        </div>
+        <form id="aiForm" class="form compact-form">
+          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin-top: 4px;">
+            <input id="aiEnabled" type="checkbox" style="margin: 0;" />
+            <span>启用 Telegram AI 改代码</span>
+          </label>
+          <label>
+            <span>默认 Provider</span>
+            <select id="aiDefaultProvider">
+              <option value="deepseek">DeepSeek</option>
+              <option value="gemini">Gemini CLI</option>
+            </select>
+          </label>
+          <label>
+            <span>DeepSeek API Base</span>
+            <input id="aiDeepseekApiBase" type="text" autocomplete="off" placeholder="https://api.deepseek.com" />
+          </label>
+          <label>
+            <span>DeepSeek API Key</span>
+            <input id="aiDeepseekApiKey" type="password" autocomplete="off" placeholder="留空则保留现有值" />
+          </label>
+          <label>
+            <span>DeepSeek Model</span>
+            <input id="aiDeepseekModel" type="text" autocomplete="off" placeholder="deepseek-chat" />
+          </label>
+          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin-top: 4px;">
+            <input id="aiGeminiCliEnabled" type="checkbox" style="margin: 0;" />
+            <span>允许 Gemini CLI</span>
+          </label>
+          <label>
+            <span>Gemini CLI Command</span>
+            <input id="aiGeminiCliCommand" type="text" autocomplete="off" placeholder="gemini" />
+          </label>
+          <div class="form-actions" style="display: flex; gap: 8px;">
+            <button class="button primary" type="submit">保存 AI 配置</button>
+            <button id="testDeepseekBtn" class="button" type="button">测试 DeepSeek</button>
           </div>
         </form>
       </section>
@@ -146,6 +190,10 @@
           <div style="font-weight: 650; font-size: 13px; margin-bottom: 8px;">接收到的消息：</div>
           <div id="updatesList" class="updates-list" style="max-height: 500px; overflow-y: auto; display: grid; gap: 8px; padding-right: 4px;">
             <div class="empty">暂无消息</div>
+          </div>
+          <div style="font-weight: 650; font-size: 13px; margin: 16px 0 8px;">AI 作业：</div>
+          <div id="aiJobsList" class="updates-list" style="max-height: 320px; overflow-y: auto; display: grid; gap: 8px; padding-right: 4px;">
+            <div class="empty">暂无 AI 作业</div>
           </div>
         </div>
       </div>

@@ -15,7 +15,7 @@ class MFoodLogin:
     def __init__(self, db: AppDatabase, project_root: str | Path):
         self.db = db
         self.project_root = Path(project_root)
-        self.state_dir = self.project_root / "code" / "data" / "mfood_login"
+        self.state_dir = self.project_root / "data" / "mfood_login"
         self.script_path = Path(__file__).resolve().parent / "vendor" / "get_mfood_token.js"
 
     def validate_token(self, token: str) -> tuple[bool, str]:
@@ -170,7 +170,7 @@ class MFoodLogin:
 
 def main(argv: list[str] | None = None) -> int:
     root = Path(os.environ.get("TRAECLAW_PROJECT_ROOT", Path(__file__).resolve().parents[3])).resolve()
-    db_path = Path(os.environ.get("TRAECLAW_DB_PATH", root / "code" / "data" / "traeclaw.sqlite3"))
+    db_path = Path(os.environ.get("TRAECLAW_DB_PATH", root / "data" / "traeclaw.sqlite3"))
     force = "--force-refresh" in (argv if argv is not None else sys.argv[1:])
     db = AppDatabase(db_path)
     db.initialize()

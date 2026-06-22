@@ -11,12 +11,12 @@ TZ = ZoneInfo("Asia/Shanghai")
 
 
 AGENTS = {
-    "cp": {"name": "cp", "folder": "code/scripts/cp", "description": "双色球推荐、开奖拉取和复盘"},
-    "mFood": {"name": "mFood", "folder": "code/scripts/mFood", "description": "mFood 登录、门店巡检和经营数据监控"},
-    "shence": {"name": "shence", "folder": "code/scripts/shence", "description": "神策数据查询和订单对账"},
-    "fb": {"name": "fb", "folder": "code/scripts/fb", "description": "Facebook 群组抓取和摘要"},
-    "crowd": {"name": "crowd", "folder": "code/scripts/crowd", "description": "众包代码更新播报"},
-    "tycp": {"name": "tycp", "folder": "code/scripts/tycp", "description": "大乐透历史数据、推荐和复盘"},
+    "cp": {"name": "cp", "folder": "scripts/cp", "description": "双色球推荐、开奖拉取和复盘"},
+    "mFood": {"name": "mFood", "folder": "scripts/mFood", "description": "mFood 登录、门店巡检和经营数据监控"},
+    "shence": {"name": "shence", "folder": "scripts/shence", "description": "神策数据查询和订单对账"},
+    "fb": {"name": "fb", "folder": "scripts/fb", "description": "Facebook 群组抓取和摘要"},
+    "crowd": {"name": "crowd", "folder": "scripts/crowd", "description": "众包代码更新播报"},
+    "tycp": {"name": "tycp", "folder": "scripts/tycp", "description": "大乐透历史数据、推荐和复盘"},
 }
 
 
@@ -34,6 +34,10 @@ class TaskDefinition:
     weekdays: tuple[int, ...] = field(default_factory=tuple)
     interval_minutes: int = 0
     timeout_seconds: int = 900
+    editable_paths: tuple[str, ...] = field(default_factory=tuple)
+    context_files: tuple[str, ...] = field(default_factory=tuple)
+    verify_commands: tuple[tuple[str, ...], ...] = field(default_factory=tuple)
+    reply_name: str = ""
 
     def next_run_after(self, now: datetime) -> datetime | None:
         if now.tzinfo is None:
@@ -70,6 +74,7 @@ class TaskDefinition:
 def list_tasks() -> list[TaskDefinition]:
     python = sys.executable or "python3"
     legacy = [python, "-m", "traeclaw.tasks.legacy"]
+    verify = ((python, "-m", "pytest", "tests", "-q"),)
     return [
         TaskDefinition(
             id="cp.predict",
@@ -81,6 +86,10 @@ def list_tasks() -> list[TaskDefinition]:
             schedule_label="每天 18:00",
             enabled_by_default=True,
             command=[python, "-m", "traeclaw.tasks.cp", "predict"],
+            editable_paths=("scripts/cp", "traeclaw/tasks/cp.py"),
+            context_files=("traeclaw/tasks/cp.py", "scripts/cp/cp_prediction_core.py"),
+            verify_commands=verify,
+            reply_name="CP 双色球推荐",
         ),
         TaskDefinition(
             id="cp.check_result",
@@ -92,6 +101,10 @@ def list_tasks() -> list[TaskDefinition]:
             schedule_label="每天 22:00",
             enabled_by_default=True,
             command=[python, "-m", "traeclaw.tasks.cp", "check-result"],
+            editable_paths=("scripts/cp", "traeclaw/tasks/cp.py"),
+            context_files=("traeclaw/tasks/cp.py", "scripts/cp/check_result_and_notify.sh"),
+            verify_commands=verify,
+            reply_name="CP 开奖复盘",
         ),
         TaskDefinition(
             id="tycp.dlt_recommend",
@@ -102,7 +115,11 @@ def list_tasks() -> list[TaskDefinition]:
             time_of_day="18:30",
             schedule_label="每天 18:30",
             enabled_by_default=True,
-            command=[*legacy, "code/scripts/tycp/dlt_recommend_budget.py"],
+            command=[*legacy, "scripts/tycp/dlt_recommend_budget.py"],
+            editable_paths=("scripts/tycp",),
+            context_files=("scripts/tycp/dlt_recommend_budget.py",),
+            verify_commands=verify,
+            reply_name="大乐透推荐",
         ),
         TaskDefinition(
             id="tycp.dlt_fetch",
@@ -113,7 +130,11 @@ def list_tasks() -> list[TaskDefinition]:
             time_of_day="21:30",
             schedule_label="每天 21:30",
             enabled_by_default=True,
-            command=[*legacy, "code/scripts/tycp/check_result.py"],
+            command=[*legacy, "scripts/tycp/check_result.py"],
+            editable_paths=("scripts/tycp",),
+            context_files=("scripts/tycp/check_result.py",),
+            verify_commands=verify,
+            reply_name="大乐透开奖复盘",
         ),
         TaskDefinition(
             id="mfood.maskphone_monitor",
@@ -123,7 +144,11 @@ def list_tasks() -> list[TaskDefinition]:
             schedule_kind="interval",
             interval_minutes=10,
             schedule_label="每 10 分钟",
-            command=[*legacy, "code/scripts/mFood/qinglong_maskphone_monitor.py"],
+            command=[*legacy, "scripts/mFood/qinglong_maskphone_monitor.py"],
+            editable_paths=("scripts/mFood", "state/mfdb/maskphone_monitor_config.json"),
+            context_files=("scripts/mFood/qinglong_maskphone_monitor.py", "state/mfdb/maskphone_monitor_config.json"),
+            verify_commands=verify,
+            reply_name="mFood 隐私号监控",
         ),
         TaskDefinition(
             id="mfood.order_monitor",
@@ -134,6 +159,10 @@ def list_tasks() -> list[TaskDefinition]:
             time_of_day="09:50",
             schedule_label="每天 09:50",
             command=[python, "-m", "traeclaw.mfood.order_monitor"],
+            editable_paths=("traeclaw/mfood/order_monitor.py", "state/mfdb/order_monitor_config.json"),
+            context_files=("traeclaw/mfood/order_monitor.py", "state/mfdb/order_monitor_config.json"),
+            verify_commands=verify,
+            reply_name="mFood 订单数据检查",
         ),
         TaskDefinition(
             id="mfood.takeout_business_analysis",
@@ -143,7 +172,11 @@ def list_tasks() -> list[TaskDefinition]:
             schedule_kind="daily",
             time_of_day="09:00",
             schedule_label="每天 09:00",
-            command=[*legacy, "code/scripts/mFood/takeout_business_analysis_check.py"],
+            command=[*legacy, "scripts/mFood/takeout_business_analysis_check.py"],
+            editable_paths=("scripts/mFood", "state/mfdb/takeout_business_analysis_check_config.json"),
+            context_files=("scripts/mFood/takeout_business_analysis_check.py", "state/mfdb/takeout_business_analysis_check_config.json"),
+            verify_commands=verify,
+            reply_name="mFood 外卖营业分析",
         ),
         TaskDefinition(
             id="mfood.market_business_analysis",
@@ -153,7 +186,11 @@ def list_tasks() -> list[TaskDefinition]:
             schedule_kind="daily",
             time_of_day="09:10",
             schedule_label="每天 09:10",
-            command=[*legacy, "code/scripts/mFood/market_business_analysis_check.py"],
+            command=[*legacy, "scripts/mFood/market_business_analysis_check.py"],
+            editable_paths=("scripts/mFood", "state/mfdb/market_business_analysis_check_config.json"),
+            context_files=("scripts/mFood/market_business_analysis_check.py", "state/mfdb/market_business_analysis_check_config.json"),
+            verify_commands=verify,
+            reply_name="mFood 超市营业分析",
         ),
         TaskDefinition(
             id="mfood.market_summary",
@@ -163,7 +200,11 @@ def list_tasks() -> list[TaskDefinition]:
             schedule_kind="daily",
             time_of_day="09:20",
             schedule_label="每天 09:20",
-            command=[*legacy, "code/scripts/mFood/market_summary_check.py"],
+            command=[*legacy, "scripts/mFood/market_summary_check.py"],
+            editable_paths=("scripts/mFood", "state/mfdb/market_summary_check_config.json"),
+            context_files=("scripts/mFood/market_summary_check.py", "state/mfdb/market_summary_check_config.json"),
+            verify_commands=verify,
+            reply_name="mFood 超市汇总检查",
         ),
         TaskDefinition(
             id="mfood.merchant_summary",
@@ -173,7 +214,11 @@ def list_tasks() -> list[TaskDefinition]:
             schedule_kind="daily",
             time_of_day="09:30",
             schedule_label="每天 09:30",
-            command=[*legacy, "code/scripts/mFood/merchant_summary_check.py"],
+            command=[*legacy, "scripts/mFood/merchant_summary_check.py"],
+            editable_paths=("scripts/mFood", "state/mfdb/merchant_summary_check_config.json"),
+            context_files=("scripts/mFood/merchant_summary_check.py", "state/mfdb/merchant_summary_check_config.json"),
+            verify_commands=verify,
+            reply_name="mFood 商户汇总检查",
         ),
         TaskDefinition(
             id="shence.order_reconcile",
@@ -183,7 +228,11 @@ def list_tasks() -> list[TaskDefinition]:
             schedule_kind="daily",
             time_of_day="09:40",
             schedule_label="每天 09:40",
-            command=[*legacy, "code/scripts/shence/shence_order_reconcile.py"],
+            command=[*legacy, "scripts/shence/shence_order_reconcile.py"],
+            editable_paths=("scripts/shence",),
+            context_files=("scripts/shence/shence_order_reconcile.py",),
+            verify_commands=verify,
+            reply_name="神策订单对账",
         ),
         TaskDefinition(
             id="facebook.yesterday_summary",
@@ -193,7 +242,11 @@ def list_tasks() -> list[TaskDefinition]:
             schedule_kind="daily",
             time_of_day="09:00",
             schedule_label="每天 09:00",
-            command=["bash", "code/scripts/fb/fb_yesterday_summary.sh"],
+            command=["bash", "scripts/fb/fb_yesterday_summary.sh"],
+            editable_paths=("scripts/fb", "state/facebook/fb_groups.json", "state/facebook/fb_storage_state.json"),
+            context_files=("scripts/fb/fb_yesterday_summary.sh", "state/facebook/fb_groups.json"),
+            verify_commands=verify,
+            reply_name="Facebook 群组昨日摘要",
         ),
         TaskDefinition(
             id="crowd.pull_report",
@@ -204,7 +257,11 @@ def list_tasks() -> list[TaskDefinition]:
             weekdays=(0, 1, 2, 3, 4),
             time_of_day="10:00",
             schedule_label="工作日 10:00",
-            command=["bash", "code/scripts/crowd/crowd_pull_report.sh"],
+            command=["bash", "scripts/crowd/crowd_pull_report.sh"],
+            editable_paths=("scripts/crowd",),
+            context_files=("scripts/crowd/crowd_pull_report.sh",),
+            verify_commands=verify,
+            reply_name="众包代码更新播报",
         ),
     ]
 

@@ -106,6 +106,54 @@ class AppDatabase:
                     ON telegram_updates(received_at DESC);
                 CREATE INDEX IF NOT EXISTS idx_telegram_updates_chat
                     ON telegram_updates(chat_id, received_at DESC);
+
+                CREATE TABLE IF NOT EXISTS ai_sessions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    task_id TEXT NOT NULL,
+                    chat_id TEXT NOT NULL,
+                    message_thread_id INTEGER,
+                    session_key TEXT NOT NULL UNIQUE,
+                    session_summary TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_ai_sessions_task_chat
+                    ON ai_sessions(task_id, chat_id, message_thread_id);
+
+                CREATE TABLE IF NOT EXISTS ai_messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_id INTEGER NOT NULL,
+                    update_id INTEGER,
+                    role TEXT NOT NULL,
+                    message_text TEXT NOT NULL DEFAULT '',
+                    include_in_context INTEGER NOT NULL DEFAULT 1,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY(session_id) REFERENCES ai_sessions(id)
+                );
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_messages_update
+                    ON ai_messages(update_id)
+                    WHERE update_id IS NOT NULL;
+                CREATE INDEX IF NOT EXISTS idx_ai_messages_session_created
+                    ON ai_messages(session_id, created_at DESC, id DESC);
+
+                CREATE TABLE IF NOT EXISTS ai_jobs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_id INTEGER,
+                    update_id INTEGER,
+                    task_id TEXT NOT NULL,
+                    provider TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    request_text TEXT NOT NULL DEFAULT '',
+                    files_touched_json TEXT NOT NULL DEFAULT '[]',
+                    verification_status TEXT NOT NULL DEFAULT '',
+                    verification_output TEXT NOT NULL DEFAULT '',
+                    reply_text TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY(session_id) REFERENCES ai_sessions(id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_ai_jobs_task_created
+                    ON ai_jobs(task_id, created_at DESC, id DESC);
                 """
             )
             # Check if login.password_md5 exists, if not set it
@@ -355,6 +403,250 @@ class AppDatabase:
                 """
             ).fetchall()
         return {row["chat_id"]: row["chat_title"] for row in rows}
+
+    def get_or_create_ai_session(self, task_id: str, chat_id: str, message_thread_id: int | None) -> dict[str, Any]:
+        session_key = f"{task_id}:{chat_id}:{message_thread_id or 0}"
+        now = utc_now()
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT * FROM ai_sessions
+                WHERE session_key = ?
+                """,
+                (session_key,),
+            ).fetchone()
+            if not row:
+                cur = conn.execute(
+                    """
+                    INSERT INTO ai_sessions (
+                        task_id, chat_id, message_thread_id, session_key,
+                        session_summary, created_at, updated_at
+                    )
+                    VALUES (?, ?, ?, ?, '', ?, ?)
+                    """,
+                    (task_id, chat_id, message_thread_id, session_key, now, now),
+                )
+                row = conn.execute("SELECT * FROM ai_sessions WHERE id = ?", (cur.lastrowid,)).fetchone()
+            return dict(row)
+
+    def get_ai_session(self, session_id: int) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute("SELECT * FROM ai_sessions WHERE id = ?", (session_id,)).fetchone()
+        return dict(row) if row else None
+
+    def update_ai_session_summary(self, session_id: int, summary: str) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                """
+                UPDATE ai_sessions
+                SET session_summary = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (summary, utc_now(), session_id),
+            )
+
+    def add_ai_message(
+        self,
+        session_id: int,
+        role: str,
+        message_text: str,
+        update_id: int | None = None,
+        include_in_context: bool = True,
+    ) -> int:
+        with self.connect() as conn:
+            cur = conn.execute(
+                """
+                INSERT INTO ai_messages (
+                    session_id, update_id, role, message_text, include_in_context, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    session_id,
+                    update_id,
+                    role,
+                    message_text,
+                    1 if include_in_context else 0,
+                    utc_now(),
+                ),
+            )
+            conn.execute(
+                "UPDATE ai_sessions SET updated_at = ? WHERE id = ?",
+                (utc_now(), session_id),
+            )
+            return int(cur.lastrowid)
+
+    def list_ai_messages(
+        self,
+        session_id: int,
+        include_archived: bool = False,
+        limit: int | None = None,
+    ) -> list[dict[str, Any]]:
+        sql = """
+            SELECT * FROM ai_messages
+            WHERE session_id = ?
+        """
+        params: list[Any] = [session_id]
+        if not include_archived:
+            sql += " AND include_in_context = 1"
+        sql += " ORDER BY created_at DESC, id DESC"
+        if limit is not None:
+            sql += " LIMIT ?"
+            params.append(limit)
+        with self.connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        items = [dict(row) for row in rows]
+        items.reverse()
+        return items
+
+    def archive_ai_messages(self, message_ids: list[int]) -> None:
+        if not message_ids:
+            return
+        placeholders = ", ".join("?" for _ in message_ids)
+        with self.connect() as conn:
+            conn.execute(
+                f"UPDATE ai_messages SET include_in_context = 0 WHERE id IN ({placeholders})",
+                message_ids,
+            )
+
+    def reset_ai_session_context(self, session_id: int) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                "UPDATE ai_messages SET include_in_context = 0 WHERE session_id = ?",
+                (session_id,),
+            )
+            conn.execute(
+                "UPDATE ai_sessions SET session_summary = '', updated_at = ? WHERE id = ?",
+                (utc_now(), session_id),
+            )
+
+    def create_ai_job(
+        self,
+        session_id: int | None,
+        update_id: int | None,
+        task_id: str,
+        provider: str,
+        status: str,
+        request_text: str,
+    ) -> int:
+        with self.connect() as conn:
+            cur = conn.execute(
+                """
+                INSERT INTO ai_jobs (
+                    session_id, update_id, task_id, provider, status, request_text,
+                    created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (session_id, update_id, task_id, provider, status, request_text, utc_now(), utc_now()),
+            )
+            return int(cur.lastrowid)
+
+    def update_ai_job(
+        self,
+        job_id: int,
+        *,
+        status: str | None = None,
+        files_touched: list[str] | None = None,
+        verification_status: str | None = None,
+        verification_output: str | None = None,
+        reply_text: str | None = None,
+        provider: str | None = None,
+    ) -> None:
+        fields = []
+        params: list[Any] = []
+        if status is not None:
+            fields.append("status = ?")
+            params.append(status)
+        if files_touched is not None:
+            fields.append("files_touched_json = ?")
+            params.append(json.dumps(files_touched, ensure_ascii=False))
+        if verification_status is not None:
+            fields.append("verification_status = ?")
+            params.append(verification_status)
+        if verification_output is not None:
+            fields.append("verification_output = ?")
+            params.append(verification_output)
+        if reply_text is not None:
+            fields.append("reply_text = ?")
+            params.append(reply_text)
+        if provider is not None:
+            fields.append("provider = ?")
+            params.append(provider)
+        fields.append("updated_at = ?")
+        params.append(utc_now())
+        params.append(job_id)
+        with self.connect() as conn:
+            conn.execute(
+                f"UPDATE ai_jobs SET {', '.join(fields)} WHERE id = ?",
+                params,
+            )
+
+    def get_ai_job(self, job_id: int) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute("SELECT * FROM ai_jobs WHERE id = ?", (job_id,)).fetchone()
+        return self._row_to_ai_job(row) if row else None
+
+    def list_ai_jobs(
+        self,
+        limit: int = 50,
+        session_id: int | None = None,
+    ) -> list[dict[str, Any]]:
+        sql = "SELECT * FROM ai_jobs"
+        params: list[Any] = []
+        if session_id is not None:
+            sql += " WHERE session_id = ?"
+            params.append(session_id)
+        sql += " ORDER BY created_at DESC, id DESC LIMIT ?"
+        params.append(limit)
+        with self.connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [self._row_to_ai_job(row) for row in rows]
+
+    def find_running_ai_job(self, task_id: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT * FROM ai_jobs
+                WHERE task_id = ? AND status IN ('queued', 'running')
+                ORDER BY created_at DESC, id DESC
+                LIMIT 1
+                """,
+                (task_id,),
+            ).fetchone()
+        return self._row_to_ai_job(row) if row else None
+
+    def list_pending_telegram_mentions(self, limit: int = 20) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT u.*
+                FROM telegram_updates u
+                LEFT JOIN ai_messages m ON m.update_id = u.update_id
+                LEFT JOIN ai_jobs j ON j.update_id = u.update_id
+                WHERE u.is_mention = 1
+                  AND u.text != ''
+                  AND m.id IS NULL
+                  AND j.id IS NULL
+                ORDER BY u.received_at ASC, u.update_id ASC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        updates = []
+        for row in rows:
+            item = dict(row)
+            item["is_mention"] = bool(item["is_mention"])
+            item["raw"] = json.loads(item.pop("raw_json"))
+            updates.append(item)
+        return updates
+
+    def _row_to_ai_job(self, row: sqlite3.Row | None) -> dict[str, Any]:
+        if row is None:
+            return {}
+        item = dict(row)
+        item["files_touched"] = json.loads(item.pop("files_touched_json") or "[]")
+        return item
 
     def import_sqlite_tables(self, source_path: str | Path) -> dict[str, Any]:
         source = Path(source_path)

@@ -52,7 +52,7 @@ def get_token() -> str:
     from pathlib import Path
     
     proj_root = Path(os.environ.get("TRAECLAW_PROJECT_ROOT") or Path(__file__).resolve().parents[3])
-    db_file = Path(os.environ.get("TRAECLAW_DB_PATH") or (proj_root / "code" / "data" / "traeclaw.sqlite3"))
+    db_file = Path(os.environ.get("TRAECLAW_DB_PATH") or (proj_root / "data" / "traeclaw.sqlite3"))
     
     db = AppDatabase(db_file)
     # 直接从数据库的 settings 表中读取键值为 "mfood.login.token" 的全局设定
