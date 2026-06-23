@@ -49,17 +49,15 @@ def env(name: str, default: str = "") -> str:
 
 def get_token() -> str:
     from traeclaw.db import AppDatabase
+    from traeclaw.mfood.login import MFoodLogin
     from pathlib import Path
     
     proj_root = Path(os.environ.get("TRAECLAW_PROJECT_ROOT") or Path(__file__).resolve().parents[3])
     db_file = Path(os.environ.get("TRAECLAW_DB_PATH") or (proj_root / "data" / "traeclaw.sqlite3"))
     
     db = AppDatabase(db_file)
-    # 直接从数据库的 settings 表中读取键值为 "mfood.login.token" 的全局设定
-    token = db.get_setting("mfood.login.token", "").strip()
-    if not token:
-        raise RuntimeError("token fetch failed: empty token in database")
-    return token
+    login_handler = MFoodLogin(db, proj_root)
+    return login_handler.get_valid_token()
 
 
 def build_headers() -> dict:

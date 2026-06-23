@@ -2,6 +2,11 @@
 import argparse
 import json
 import sqlite3
+import sys
+from pathlib import Path
+_dir = str(Path(__file__).resolve().parent)
+if _dir not in sys.path:
+    sys.path.insert(0, _dir)
 
 from cp_prediction_core import DB_PATH, get_issue_report, settle_next_pending
 

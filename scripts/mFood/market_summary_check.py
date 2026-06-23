@@ -40,8 +40,29 @@ def to_text(v: Any) -> str:
 
 
 def load_config() -> dict:
-    with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-        return json.load(f)
+    if os.path.exists(CONFIG_PATH):
+        try:
+            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"警告：讀取本地配置失敗：{e}", file=sys.stderr)
+
+    # Fallback to database setting
+    try:
+        from traeclaw.db import AppDatabase
+        from pathlib import Path
+        proj_root = Path(os.environ.get("TRAECLAW_PROJECT_ROOT") or Path(__file__).resolve().parents[3])
+        db_file = Path(os.environ.get("TRAECLAW_DB_PATH") or (proj_root / "code" / "data" / "traeclaw.sqlite3"))
+        db = AppDatabase(db_file)
+        content = db.get_setting("file:state/mfdb/market_summary_check_config.json", "")
+        if not content:
+            content = db.get_setting("file:code/state/mfdb/market_summary_check_config.json", "")
+        if content:
+            return json.loads(content)
+    except Exception as e:
+        print(f"警告：從數據庫加載配置失敗：{e}", file=sys.stderr)
+
+    return {}
 
 
 def yesterday_str() -> str:
@@ -50,16 +71,15 @@ def yesterday_str() -> str:
 
 def get_login_token(profile: str = "") -> str:
     from traeclaw.db import AppDatabase
+    from traeclaw.mfood.login import MFoodLogin
     from pathlib import Path
     
     proj_root = Path(os.environ.get("TRAECLAW_PROJECT_ROOT") or Path(__file__).resolve().parents[3])
     db_file = Path(os.environ.get("TRAECLAW_DB_PATH") or (proj_root / "data" / "traeclaw.sqlite3"))
     
     db = AppDatabase(db_file)
-    token = db.get_setting("mfood.login.token", "").strip()
-    if not token:
-        raise RuntimeError("mFood token not configured or empty in database")
-    return token
+    login_handler = MFoodLogin(db, proj_root)
+    return login_handler.get_valid_token()
 
 
 DEFAULT_HEADERS = {

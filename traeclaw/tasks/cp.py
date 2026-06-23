@@ -20,11 +20,19 @@ def project_root() -> Path:
 def db_path() -> Path:
     if os.environ.get("TRAECLAW_DB_PATH"):
         return Path(os.environ["TRAECLAW_DB_PATH"]).resolve()
-    return project_root() / "data" / "traeclaw.sqlite3"
+    root = project_root()
+    if (root / "code" / "data" / "traeclaw.sqlite3").exists():
+        return root / "code" / "data" / "traeclaw.sqlite3"
+    return root / "data" / "traeclaw.sqlite3"
 
 
 def _load_cp_core():
-    scripts_dir = project_root() / "scripts" / "cp"
+    root = project_root()
+    if (root / "code" / "scripts" / "cp").is_dir():
+        scripts_dir = root / "code" / "scripts" / "cp"
+    else:
+        scripts_dir = root / "scripts" / "cp"
+        
     if str(scripts_dir) not in sys.path:
         sys.path.insert(0, str(scripts_dir))
     import backtest_ssq  # type: ignore

@@ -123,12 +123,6 @@ const taskWorkflows = {
     { title: "启动 Playwright", detail: "逻辑：使用 Playwright 启动本机的 Google Chrome 浏览器进程，加载原有的 cookies 免登录进入 Facebook 网页。" },
     { title: "遍历抓取贴文", detail: "逻辑：循环访问各群组页面，滑动页面以动态加载内容。抓取昨日（yesterday 00:00 - 23:59）发布的贴文文本、发布者、点赞及评论数。" },
     { title: "内容摘要与通知", detail: "逻辑：过滤去重并解析抓取到的贴文文本，调用总结模块生成昨日群活动 md 报告输出到 tmp 文件夹，若配置了 Telegram 机器人则推送汇总消息。" }
-  ],
-  "crowd.pull_report": [
-    { title: "遍历众包仓库", detail: "配置需要监控的本地仓库路径，如 $BASE_DIR/h5-crowdsource（前端）、o2o-crowdsource（业务后台）等。" },
-    { title: "执行代码同步", detail: "逻辑：进入每个 Git 仓库目录，执行 `git fetch origin`，然后执行 `git pull --ff-only origin {current_branch}` 同步最新代码。" },
-    { title: "比对提交日志", detail: "逻辑：记录更新前后的 HEAD commit ID。若 ID 发生改变，执行 `git log --no-merges --pretty='- %s' before..after` 提取出最新的前 8 条更新日志内容。" },
-    { title: "生成播报并发送", detail: "逻辑：合并多个众包仓库的更新日志，写入 crowd_pull_report.txt 文件并转换成 state json，最终生成播报并通过 Telegram 推送。" }
   ]
 };
 

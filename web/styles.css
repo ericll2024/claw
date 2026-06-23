@@ -859,6 +859,12 @@ h2 {
   gap: 10px;
 }
 
+.settings-scroll-container {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
 .settings-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(280px, 380px);

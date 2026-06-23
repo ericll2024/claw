@@ -100,18 +100,34 @@ class MFoodOrderMonitor:
                 manager_account=manager_account,
                 manager_password_md5=manager_password_md5,
             )
-            # Try to load thresholds from the external configuration file first
-            config_path = Path("state/mfdb/order_monitor_config.json")
+            # Try to load thresholds from the unified database setting first, then fallback to external file
             ext_takeout_threshold = None
             ext_market_threshold = None
-            if config_path.exists():
+
+            db_config_content = self.db.get_setting("file:state/mfdb/order_monitor_config.json", "")
+            if not db_config_content:
+                db_config_content = self.db.get_setting("file:code/state/mfdb/order_monitor_config.json", "")
+
+            if db_config_content:
                 try:
-                    with open(config_path, "r", encoding="utf-8") as f:
-                        ext_config = json.load(f)
-                        ext_takeout_threshold = ext_config.get("takeout_threshold")
-                        ext_market_threshold = ext_config.get("market_threshold")
+                    ext_config = json.loads(db_config_content)
+                    ext_takeout_threshold = ext_config.get("takeout_threshold")
+                    ext_market_threshold = ext_config.get("market_threshold")
                 except Exception:
                     pass
+
+            if ext_takeout_threshold is None or ext_market_threshold is None:
+                config_path = Path("state/mfdb/order_monitor_config.json")
+                if config_path.exists():
+                    try:
+                        with open(config_path, "r", encoding="utf-8") as f:
+                            ext_config = json.load(f)
+                            if ext_takeout_threshold is None:
+                                ext_takeout_threshold = ext_config.get("takeout_threshold")
+                            if ext_market_threshold is None:
+                                ext_market_threshold = ext_config.get("market_threshold")
+                    except Exception:
+                        pass
 
             takeout_threshold_val = (
                 str(ext_takeout_threshold) if ext_takeout_threshold is not None else

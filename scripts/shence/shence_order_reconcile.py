@@ -15,8 +15,52 @@ WORKSPACE = "/home/eric/Documents/workspace"
 # MFOOD_API_DIR, MFOOD_LOGIN_DIR, and MFOOD_SHENCE_DIR are removed as we use traeclaw packages directly
 STATE_DIR = f"{WORKSPACE}/state/scjk"
 DB_PATH = f"{STATE_DIR}/shence_monitor.db"
-TAKEOUT_THRESHOLD = 200
-MARKET_THRESHOLD = 60
+def load_thresholds() -> tuple[int, int]:
+    import json
+    from pathlib import Path
+    
+    takeout_default = 300
+    market_default = 300
+    
+    try:
+        proj_root = Path(os.environ.get("TRAECLAW_PROJECT_ROOT") or Path(__file__).resolve().parents[3])
+        db_file = Path(os.environ.get("TRAECLAW_DB_PATH") or (proj_root / "code" / "data" / "traeclaw.sqlite3"))
+        
+        if db_file.exists():
+            from traeclaw.db import AppDatabase
+            db = AppDatabase(db_file)
+            db_config_content = db.get_setting("file:code/state/mfdb/order_monitor_config.json", "")
+            if not db_config_content:
+                db_config_content = db.get_setting("file:state/mfdb/order_monitor_config.json", "")
+                
+            if db_config_content:
+                ext_config = json.loads(db_config_content)
+                takeout = ext_config.get("takeout_threshold", takeout_default)
+                market = ext_config.get("market_threshold", market_default)
+                return int(takeout), int(market)
+    except Exception:
+        pass
+
+    try:
+        proj_root = Path(os.environ.get("TRAECLAW_PROJECT_ROOT") or Path(__file__).resolve().parents[3])
+        config_paths = [
+            proj_root / "code" / "state" / "mfdb" / "order_monitor_config.json",
+            Path("state/mfdb/order_monitor_config.json"),
+            Path("code/state/mfdb/order_monitor_config.json")
+        ]
+        for path in config_paths:
+            if path.exists():
+                with open(path, "r", encoding="utf-8") as f:
+                    ext_config = json.load(f)
+                    takeout = ext_config.get("takeout_threshold", takeout_default)
+                    market = ext_config.get("market_threshold", market_default)
+                    return int(takeout), int(market)
+    except Exception:
+        pass
+
+    return takeout_default, market_default
+
+TAKEOUT_THRESHOLD, MARKET_THRESHOLD = load_thresholds()
 MAX_RETRIES = 3
 RETRY_DELAY_SECONDS = 2
 
@@ -60,16 +104,15 @@ def parse_args():
 
 def get_token():
     from traeclaw.db import AppDatabase
+    from traeclaw.mfood.login import MFoodLogin
     from pathlib import Path
     
     proj_root = Path(os.environ.get("TRAECLAW_PROJECT_ROOT") or Path(__file__).resolve().parents[3])
     db_file = Path(os.environ.get("TRAECLAW_DB_PATH") or (proj_root / "data" / "traeclaw.sqlite3"))
     
     db = AppDatabase(db_file)
-    token = db.get_setting("mfood.login.token", "").strip()
-    if not token:
-        raise RuntimeError("mFood token not configured or empty in database")
-    return {"token": token}
+    login_handler = MFoodLogin(db, proj_root)
+    return {"token": login_handler.get_valid_token()}
 
 
 def shence_first_row(sql):

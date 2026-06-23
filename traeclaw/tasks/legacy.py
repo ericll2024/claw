@@ -81,18 +81,9 @@ def rewrite_legacy_source(source: str, root: str | Path, shared_db: str | Path) 
         source,
     )
 
-    # Relocate state/scripts paths under the code/ folder if running in local workspace structure
-    if (Path(root) / "code").is_dir():
-        source = source.replace("ROOT / 'state'", "ROOT / 'code' / 'state'")
-        source = source.replace('ROOT / "state"', 'ROOT / "code" / "state"')
-        source = source.replace("ROOT / 'skills' / 'dida-todo-sync' / 'scripts' / 'dida_sync.py'", "ROOT / 'code' / 'scripts' / 'dida' / 'dida_sync.py'")
-        source = source.replace('ROOT / "skills" / "dida-todo-sync" / "scripts" / "dida_sync.py"', 'ROOT / "code" / "scripts" / "dida" / "dida_sync.py"')
-        source = source.replace("{WORKSPACE}/state", "{WORKSPACE}/code/state")
-        source = source.replace("{WORKSPACE}/scripts", "{WORKSPACE}/code/scripts")
-    else:
-        # Relocate legacy helper paths into the standalone project layout.
-        source = source.replace("ROOT / 'skills' / 'dida-todo-sync' / 'scripts' / 'dida_sync.py'", "ROOT / 'scripts' / 'dida' / 'dida_sync.py'")
-        source = source.replace('ROOT / "skills" / "dida-todo-sync" / "scripts" / "dida_sync.py"', 'ROOT / "scripts" / "dida" / "dida_sync.py"')
+    # Relocate legacy helper paths into the standalone project layout.
+    source = source.replace("ROOT / 'skills' / 'dida-todo-sync' / 'scripts' / 'dida_sync.py'", "ROOT / 'scripts' / 'dida' / 'dida_sync.py'")
+    source = source.replace('ROOT / "skills" / "dida-todo-sync" / "scripts" / "dida_sync.py"', 'ROOT / "scripts" / "dida" / "dida_sync.py"')
 
     return source
 

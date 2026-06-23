@@ -15,7 +15,6 @@ AGENTS = {
     "mFood": {"name": "mFood", "folder": "scripts/mFood", "description": "mFood 登录、门店巡检和经营数据监控"},
     "shence": {"name": "shence", "folder": "scripts/shence", "description": "神策数据查询和订单对账"},
     "fb": {"name": "fb", "folder": "scripts/fb", "description": "Facebook 群组抓取和摘要"},
-    "crowd": {"name": "crowd", "folder": "scripts/crowd", "description": "众包代码更新播报"},
     "tycp": {"name": "tycp", "folder": "scripts/tycp", "description": "大乐透历史数据、推荐和复盘"},
 }
 
@@ -99,12 +98,7 @@ TASK_WORKFLOWS: dict[str, tuple[WorkflowStep, ...]] = {
         ("遍历抓取贴文", "抓取昨日群组贴文、互动数据和内容。"),
         ("内容摘要与通知", "汇总生成摘要并按需推送 Telegram。"),
     ),
-    "crowd.pull_report": _steps(
-        ("遍历众包仓库", "读取需要监控的本地仓库路径。"),
-        ("执行代码同步", "对每个仓库执行 fetch 和 fast-forward pull。"),
-        ("比对提交日志", "比较更新前后 HEAD 并提取新增提交摘要。"),
-        ("生成播报并发送", "聚合更新日志并发送到 Telegram。"),
-    ),
+
 }
 
 
@@ -349,22 +343,7 @@ def list_tasks() -> list[TaskDefinition]:
             reply_name="Facebook 群组昨日摘要",
             workflow_steps=TASK_WORKFLOWS["facebook.yesterday_summary"],
         ),
-        TaskDefinition(
-            id="crowd.pull_report",
-            name="众包代码更新播报",
-            group="crowd",
-            description="拉取众包相关仓库并输出更新播报。",
-            schedule_kind="weekly",
-            weekdays=(0, 1, 2, 3, 4),
-            time_of_day="10:00",
-            schedule_label="工作日 10:00",
-            command=["bash", "scripts/crowd/crowd_pull_report.sh"],
-            editable_paths=("scripts/crowd",),
-            context_files=("scripts/crowd/crowd_pull_report.sh",),
-            verify_commands=verify,
-            reply_name="众包代码更新播报",
-            workflow_steps=TASK_WORKFLOWS["crowd.pull_report"],
-        ),
+
     ]
 
 

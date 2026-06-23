@@ -33,10 +33,6 @@ const mfoodFields = {
     sensors_api_key: "#mfoodShenceApiKey",
     sensors_project: "#mfoodShenceProject",
   },
-  order_monitor: {
-    takeout_threshold: "#mfoodTakeoutThreshold",
-    market_threshold: "#mfoodMarketThreshold",
-  },
 };
 
 async function api(path, options = {}) {
@@ -104,8 +100,8 @@ async function loadMFood() {
       }
     }
   }
-  mfoodState.textContent = `${configuredCount}/3`;
-  mfoodState.className = configuredCount === 3 ? "badge success" : configuredCount > 0 ? "badge running" : "badge";
+  mfoodState.textContent = `${configuredCount}/2`;
+  mfoodState.className = configuredCount === 2 ? "badge success" : configuredCount > 0 ? "badge running" : "badge";
 
   if (settings.login?.token_configured) {
     mfoodLoginStatusBadge.textContent = "已登录";
@@ -209,7 +205,6 @@ testDeepseekBtn.addEventListener("click", async () => {
 
 const mfoodLoginForm = document.querySelector("#mfoodLoginForm");
 const mfoodShenceForm = document.querySelector("#mfoodShenceForm");
-const mfoodMonitorForm = document.querySelector("#mfoodMonitorForm");
 
 mfoodLoginForm.addEventListener("submit", (event) => {
   event.preventDefault();
@@ -252,24 +247,7 @@ mfoodShenceForm.addEventListener("submit", (event) => {
     .catch(showError);
 });
 
-mfoodMonitorForm.addEventListener("submit", (event) => {
-  event.preventDefault();
-  const payload = {
-    order_monitor: {
-      takeout_threshold: document.querySelector("#mfoodTakeoutThreshold").value.trim(),
-      market_threshold: document.querySelector("#mfoodMarketThreshold").value.trim(),
-    }
-  };
-  api("/api/settings/mfood", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  })
-    .then(() => {
-      showToast("mFood 订单对账配置保存成功", "success");
-      return loadMFood();
-    })
-    .catch(showError);
-});
+
 
 checkMFoodTokenBtn.addEventListener("click", async () => {
   checkMFoodTokenBtn.disabled = true;

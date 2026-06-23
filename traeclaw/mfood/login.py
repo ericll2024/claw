@@ -167,6 +167,15 @@ class MFoodLogin:
         except OSError:
             pass
 
+    def get_valid_token(self) -> str:
+        token = self.db.get_setting("mfood.login.token", "").strip()
+        if not token:
+            raise RuntimeError("mFood Token 未配置，請至系統設定頁面點擊「登錄 mFood」重新獲取")
+        ok, msg = self.validate_token(token)
+        if ok:
+            return token
+        raise RuntimeError(f"mFood Token 已失效（原因：{msg}），請至系統設定頁面重新登錄")
+
 
 def main(argv: list[str] | None = None) -> int:
     root = Path(os.environ.get("TRAECLAW_PROJECT_ROOT", Path(__file__).resolve().parents[3])).resolve()

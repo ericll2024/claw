@@ -8,6 +8,11 @@ from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Tuple
+import sys
+from pathlib import Path
+_dir = str(Path(__file__).resolve().parent)
+if _dir not in sys.path:
+    sys.path.insert(0, _dir)
 
 from backtest_ssq import DB_PATH, PRIZE_MAP, build_strategy, ensure_tables, load_draws
 

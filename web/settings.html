@@ -18,7 +18,8 @@
       </div>
     </header>
 
-    <main class="settings-layout">
+    <main class="settings-scroll-container">
+      <div class="settings-layout">
       <section class="panel settings-wide">
         <div class="section-head">
           <h2>Telegram</h2>
@@ -146,26 +147,9 @@
           </div>
         </form>
 
-        <hr style="border: 0; border-top: 1px solid var(--line); margin: 0;" />
-
-        <form id="mfoodMonitorForm" class="form compact-form">
-          <div class="form-group" style="border-bottom: 0; padding-bottom: 0;">
-            <strong>訂單對賬配置</strong>
-            <label>
-              <span>外賣閥值</span>
-              <input id="mfoodTakeoutThreshold" type="text" autocomplete="off" />
-            </label>
-            <label>
-              <span>超市閥值</span>
-              <input id="mfoodMarketThreshold" type="text" autocomplete="off" />
-            </label>
-          </div>
-          <div class="form-actions">
-            <button class="button primary" type="submit">保存对账配置</button>
-          </div>
-        </form>
       </section>
-    </main>
+    </div>
+  </main>
 
     <!-- Telegram 消息監聽模態彈窗 -->
     <div id="listenerModal" class="modal-overlay">

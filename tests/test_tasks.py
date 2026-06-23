@@ -26,7 +26,6 @@ def test_registry_includes_legacy_script_tasks_as_visible_items():
     assert "mfood.maskphone_monitor" in task_ids
     assert "shence.order_reconcile" in task_ids
     assert "facebook.yesterday_summary" in task_ids
-    assert "crowd.pull_report" in task_ids
 
 
 def test_registry_includes_migrated_mfood_skill_tasks():
