@@ -154,10 +154,10 @@ def main():
         
     # 6. Build summary response
     summary_text = (
-        f"大乐透第 {draw_num} 期组合推荐已生成并保存：\n"
-        f"- **100元档 (8+2)**: 前区 {' '.join(front_8)} | 后区 {' '.join(base_back)}，成本 112 元\n"
-        f"- **500元档 (10+2)**: 前区 {' '.join(front_10)} | 后区 {' '.join(base_back)}，成本 504 元\n"
-        f"- **1000元档 (11+2)**: 前区 {' '.join(front_11)} | 后区 {' '.join(base_back)}，成本 924 元"
+        f"第 {draw_num}期预测\n"
+        f" 8+2:  前区 {','.join(front_8)}，后区 {','.join(base_back)}，成本 112 元\n"
+        f"10+2: 前区 {','.join(front_10)}，后区 {','.join(base_back)}，成本 504 元\n"
+        f"11+2: 前区 {','.join(front_11)}，后区 {','.join(base_back)}，成本 924 元"
     )
     
     result = {
