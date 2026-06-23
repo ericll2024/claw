@@ -578,6 +578,11 @@ h2 {
 
 .runs-table th:nth-child(5),
 .runs-table td:nth-child(5) {
+  width: 90px;
+}
+
+.runs-table th:nth-child(6),
+.runs-table td:nth-child(6) {
   width: 70px;
 }
 
@@ -1257,9 +1262,9 @@ code {
   background-color: #f7faf9;
 }
 
-.runs-table th:nth-child(7),
-.runs-table td:nth-child(7) {
-  width: 70px;
+.runs-table th:nth-child(8),
+.runs-table td:nth-child(8) {
+  width: 150px;
   text-align: center;
 }
 
