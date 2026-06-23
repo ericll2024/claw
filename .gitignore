@@ -36,11 +36,13 @@ MANIFEST
 
 # Databases and State
 *.sqlite3
+!data/traeclaw.sqlite3
 *.db
 *.sqlite
-data/
+data/*
+!data/traeclaw.sqlite3
 state/
-code/data/
+
 tmp/
 **/cache.json
 **/defaults.json
