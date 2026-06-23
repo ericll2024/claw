@@ -10,15 +10,24 @@ from .server import make_server
 
 
 def default_project_root() -> Path:
-    return Path(__file__).resolve().parents[2]
+    # If the package is in a 'code' folder (local development structure), parents[2] is the workspace root
+    # If it is at the root of a cloned repository, parents[1] is the repository root
+    parent_1 = Path(__file__).resolve().parents[1]
+    if parent_1.name == "code":
+        return Path(__file__).resolve().parents[2]
+    return parent_1
 
 
 def build_app(args) -> TraeclawApp:
     root = Path(args.project_root).resolve() if args.project_root else default_project_root()
-    db_path = Path(args.db).resolve() if args.db else root / "data" / "traeclaw.sqlite3"
+    if (root / "code" / "data").is_dir():
+        db_path = Path(args.db).resolve() if args.db else root / "code" / "data" / "traeclaw.sqlite3"
+    else:
+        db_path = Path(args.db).resolve() if args.db else root / "data" / "traeclaw.sqlite3"
     from .db import AppDatabase
 
     return TraeclawApp(root, db=AppDatabase(db_path), import_legacy_state=not args.no_import_state)
+
 
 
 def main(argv: list[str] | None = None) -> int:

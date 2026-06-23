@@ -26,7 +26,12 @@ class TraeclawApp:
         import_legacy_state: bool = True,
     ):
         self.project_root = Path(project_root).resolve()
-        self.db = db or AppDatabase(self.project_root / "data" / "traeclaw.sqlite3")
+        if not db:
+            if (self.project_root / "code" / "data").is_dir():
+                db = AppDatabase(self.project_root / "code" / "data" / "traeclaw.sqlite3")
+            else:
+                db = AppDatabase(self.project_root / "data" / "traeclaw.sqlite3")
+        self.db = db
         self.import_legacy_state = import_legacy_state
         self.runner = TaskRunner(self.db, self.project_root)
         self.telegram_listener = TelegramUpdateListener(self.db)
