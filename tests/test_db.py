@@ -44,6 +44,24 @@ def test_settings_round_trip_and_mask_secret(tmp_path):
     assert public["telegram.bot_token"]["configured"] is True
 
 
+def test_ai_session_can_store_provider_metadata_and_context_hash(tmp_path):
+    db = AppDatabase(tmp_path / "app.sqlite3")
+    db.initialize()
+
+    session = db.get_or_create_ai_session("cp.predict", "-1001", None)
+    db.update_ai_session_state(
+        session["id"],
+        provider_session_id="provider-session-1",
+        provider_model="deepseek-v4-flash",
+        context_snapshot_hash="hash-1",
+    )
+
+    saved = db.get_ai_session(session["id"])
+    assert saved["provider_session_id"] == "provider-session-1"
+    assert saved["provider_model"] == "deepseek-v4-flash"
+    assert saved["context_snapshot_hash"] == "hash-1"
+
+
 def test_record_run_and_latest_result(tmp_path):
     db = AppDatabase(tmp_path / "app.sqlite3")
     db.initialize()

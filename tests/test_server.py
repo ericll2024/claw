@@ -47,6 +47,8 @@ def test_tasks_api_returns_registered_tasks_and_latest_run(tmp_path):
     cp_task = next(task for task in payload["tasks"] if task["id"] == "cp.predict")
     assert cp_task["schedule_label"] == "每天 18:00"
     assert "next_run_at" in cp_task
+    assert cp_task["workflow_steps"]
+    assert cp_task["work_path"] == "scripts/cp"
 
 
 def test_index_page_shows_telegram_listener_status_slot(tmp_path):

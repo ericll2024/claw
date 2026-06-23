@@ -855,7 +855,7 @@ function openWorkflowModal(taskId) {
   const task = agent.tasks.find((t) => t.id === taskId);
   if (!task) return;
 
-  const steps = taskWorkflows[taskId] || [];
+  const steps = task.workflow_steps || taskWorkflows[taskId] || [];
   workflowModalTitle.textContent = `工作流 - ${task.name}`;
 
   if (steps.length === 0) {

@@ -21,6 +21,12 @@ def mask_secret(value: str) -> str:
     return ("*" * 12) + value[-4:]
 
 
+def _ensure_column(conn: sqlite3.Connection, table: str, column: str, definition: str) -> None:
+    columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+    if column not in columns:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+
+
 class AppDatabase:
     def __init__(self, path: str | Path):
         self.path = Path(path)
@@ -114,6 +120,9 @@ class AppDatabase:
                     message_thread_id INTEGER,
                     session_key TEXT NOT NULL UNIQUE,
                     session_summary TEXT NOT NULL DEFAULT '',
+                    provider_session_id TEXT NOT NULL DEFAULT '',
+                    provider_model TEXT NOT NULL DEFAULT '',
+                    context_snapshot_hash TEXT NOT NULL DEFAULT '',
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
@@ -166,6 +175,9 @@ class AppDatabase:
                     """,
                     (utc_now(),),
                 )
+            _ensure_column(conn, "ai_sessions", "provider_session_id", "TEXT NOT NULL DEFAULT ''")
+            _ensure_column(conn, "ai_sessions", "provider_model", "TEXT NOT NULL DEFAULT ''")
+            _ensure_column(conn, "ai_sessions", "context_snapshot_hash", "TEXT NOT NULL DEFAULT ''")
 
     def set_setting(self, key: str, value: str, is_secret: bool = False) -> None:
         with self.connect() as conn:
@@ -445,6 +457,33 @@ class AppDatabase:
                 (summary, utc_now(), session_id),
             )
 
+    def update_ai_session_state(
+        self,
+        session_id: int,
+        *,
+        provider_session_id: str | None = None,
+        provider_model: str | None = None,
+        context_snapshot_hash: str | None = None,
+    ) -> None:
+        fields = []
+        params: list[Any] = []
+        if provider_session_id is not None:
+            fields.append("provider_session_id = ?")
+            params.append(provider_session_id)
+        if provider_model is not None:
+            fields.append("provider_model = ?")
+            params.append(provider_model)
+        if context_snapshot_hash is not None:
+            fields.append("context_snapshot_hash = ?")
+            params.append(context_snapshot_hash)
+        if not fields:
+            return
+        fields.append("updated_at = ?")
+        params.append(utc_now())
+        params.append(session_id)
+        with self.connect() as conn:
+            conn.execute(f"UPDATE ai_sessions SET {', '.join(fields)} WHERE id = ?", params)
+
     def add_ai_message(
         self,
         session_id: int,
@@ -516,7 +555,14 @@ class AppDatabase:
                 (session_id,),
             )
             conn.execute(
-                "UPDATE ai_sessions SET session_summary = '', updated_at = ? WHERE id = ?",
+                """
+                UPDATE ai_sessions
+                SET session_summary = '',
+                    provider_session_id = '',
+                    context_snapshot_hash = '',
+                    updated_at = ?
+                WHERE id = ?
+                """,
                 (utc_now(), session_id),
             )
 

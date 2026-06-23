@@ -1,4 +1,5 @@
 import importlib
+import json
 from pathlib import Path
 
 import pytest
@@ -22,6 +23,7 @@ def test_task_definitions_expose_ai_metadata():
     assert cp_task.context_files
     assert cp_task.verify_commands
     assert cp_task.reply_name
+    assert cp_task.workflow_steps
     assert "scripts/cp" in cp_task.editable_paths
 
 
@@ -65,6 +67,30 @@ def test_context_manager_compacts_old_messages_into_summary(tmp_path):
     assert len(context["recent_messages"]) == 6
     assert "message 0" not in [item["message_text"] for item in context["recent_messages"]]
     assert "用户目标" in context["session_summary"]
+
+
+def test_context_manager_builds_task_context_packet_with_group_summaries(tmp_path):
+    context_module = _load_module("traeclaw.ai_context")
+    db = AppDatabase(tmp_path / "app.sqlite3")
+    app = TraeclawApp(project_root=tmp_path, db=db, import_legacy_state=False)
+    app.initialize()
+
+    db.set_setting("task.cp.predict.telegram_chat_id", "-1001")
+    run_id = db.start_run("cp.predict", "manual")
+    db.finish_run(run_id, "success", 0, "stdout", "", "cp latest run")
+
+    manager = context_module.AiContextManager(db)
+    session = manager.get_or_create_session("cp.predict", "-1001", None)
+    context = manager.build_context(session["id"], current_text="列出这个群的任务", app=app)
+
+    packet = context["task_context"]
+    assert packet["current_task_detail"]["id"] == "cp.predict"
+    assert packet["current_task_detail"]["work_path"] == "scripts/cp"
+    assert packet["current_task_detail"]["workflow_steps"]
+    assert packet["current_task_detail"]["latest_run"]["summary"] == "cp latest run"
+    assert packet["group_task_summaries"]
+    assert {item["id"] for item in packet["group_task_summaries"]} == {"cp.check_result"}
+    assert packet["group_summary"]
 
 
 def test_patch_executor_rejects_out_of_scope_edits(tmp_path):
@@ -225,6 +251,25 @@ def test_dispatcher_processes_mention_into_ai_job_and_replies(tmp_path, monkeypa
     assert "已完成修改" in replies[1][1]
 
 
+def test_dispatcher_prompt_includes_task_context_packet(tmp_path):
+    dispatcher_module = _load_module("traeclaw.ai_dispatcher")
+
+    db = AppDatabase(tmp_path / "app.sqlite3")
+    app = TraeclawApp(project_root=tmp_path, db=db, import_legacy_state=False)
+    app.initialize()
+    db.set_setting("task.cp.predict.telegram_chat_id", "-1001")
+
+    session = db.get_or_create_ai_session("cp.predict", "-1001", None)
+    dispatcher = dispatcher_module.TelegramAiDispatcher(app=app)
+    prompt = dispatcher._build_prompt(get_task("cp.predict"), session["id"], "查看任务状态")
+    payload = json.loads(prompt)
+
+    assert payload["task_context"]["current_task_detail"]["id"] == "cp.predict"
+    assert payload["task_context"]["current_task_detail"]["workflow_steps"]
+    assert payload["task_context"]["current_task_detail"]["work_path"] == "scripts/cp"
+    assert {item["id"] for item in payload["task_context"]["group_task_summaries"]} == {"cp.check_result"}
+
+
 def test_dispatcher_reset_command_clears_context(tmp_path):
     dispatcher_module = _load_module("traeclaw.ai_dispatcher")
 
@@ -267,3 +312,63 @@ def test_dispatcher_reset_command_clears_context(tmp_path):
     assert processed == 1
     assert context["recent_messages"] == []
     assert replies and "重置" in replies[0]
+
+
+def test_dispatcher_status_and_tasks_commands_are_read_only(tmp_path):
+    dispatcher_module = _load_module("traeclaw.ai_dispatcher")
+
+    db = AppDatabase(tmp_path / "app.sqlite3")
+    app = TraeclawApp(project_root=tmp_path, db=db, import_legacy_state=False)
+    app.initialize()
+    db.set_setting("task.cp.predict.telegram_chat_id", "-1001")
+
+    run_id = db.start_run("cp.predict", "manual")
+    db.finish_run(run_id, "success", 0, "", "", "cp latest run")
+    session = db.get_or_create_ai_session("cp.predict", "-1001", None)
+    db.create_ai_job(session["id"], 501, "cp.predict", "deepseek", "rerun_success", "old request")
+
+    replies = []
+    dispatcher = dispatcher_module.TelegramAiDispatcher(
+        app=app,
+        provider_factory=lambda provider_name: None,
+        notifier=lambda chat_id, text, message_thread_id=None: replies.append(text),
+    )
+
+    db.save_telegram_update(
+        {
+            "update_id": 103,
+            "message_id": 57,
+            "chat_id": "-1001",
+            "chat_title": "AI Group",
+            "from_id": "u1",
+            "from_name": "tester",
+            "text": "@bot status",
+            "is_mention": True,
+            "received_at": "2026-06-22T00:06:00Z",
+            "raw": {},
+        }
+    )
+    db.save_telegram_update(
+        {
+            "update_id": 104,
+            "message_id": 58,
+            "chat_id": "-1001",
+            "chat_title": "AI Group",
+            "from_id": "u1",
+            "from_name": "tester",
+            "text": "@bot tasks",
+            "is_mention": True,
+            "received_at": "2026-06-22T00:07:00Z",
+            "raw": {},
+        }
+    )
+
+    processed = dispatcher.process_pending(limit=10)
+
+    assert processed == 2
+    assert len(db.list_ai_jobs(limit=10, session_id=session["id"])) == 1
+    assert "当前任务" in replies[0]
+    assert "最近作业" in replies[0]
+    assert "任务列表" in replies[1]
+    assert "CP 双色球推荐号码" in replies[1]
+    assert "CP 拉取开奖并复盘" in replies[1]

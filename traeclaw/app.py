@@ -184,6 +184,7 @@ class TraeclawApp:
                 {
                     "id": task.id,
                     "name": task_display_name,
+                    "reply_name": task.reply_name or task.name,
                     "group": task.group,
                     "description": task.description,
                     "note": custom_note,
@@ -203,9 +204,105 @@ class TraeclawApp:
                     "telegram_group_name": telegram_group_name,
                     "config_errors": config_errors,
                     "config_preview": self.get_task_config_preview(task.id),
+                    "workflow_steps": _serialize_workflow_steps(task),
+                    "work_path": get_agent_meta(task.group)["folder"],
                 }
             )
         return cards
+
+    def build_ai_task_context(self, task_or_id: TaskDefinition | str, chat_id: str = "") -> dict[str, Any]:
+        task = get_task(task_or_id) if isinstance(task_or_id, str) else task_or_id
+        cards = {card["id"]: card for card in self.list_task_cards()}
+        current = cards.get(task.id)
+        if current is None:
+            current = {
+                "id": task.id,
+                "name": task.name,
+                "reply_name": task.reply_name or task.name,
+                "group": task.group,
+                "description": task.description,
+                "note": "",
+                "schedule_label": task.schedule_label,
+                "schedule": {"label": task.schedule_label},
+                "next_run_at": None,
+                "enabled": self.is_task_enabled(task),
+                "command": task.command_label,
+                "telegram_chat_id": str(chat_id or ""),
+                "telegram_group_name": "",
+                "config_preview": None,
+                "workflow_steps": _serialize_workflow_steps(task),
+                "work_path": get_agent_meta(task.group)["folder"],
+                "last_run": self.db.get_latest_run(task.id),
+                "recent_runs": self.db.get_runs(task.id, limit=5),
+                "latest_results": self.db.get_task_results(task.id, limit=3),
+            }
+        group_cards = [cards[item.id] for item in list_tasks() if item.group == task.group and item.id in cards]
+        latest_job = next((job for job in self.db.list_ai_jobs(limit=20) if job["task_id"] == task.id), None)
+        current_task_detail = {
+            "id": current["id"],
+            "name": current["name"],
+            "reply_name": current["reply_name"],
+            "group": current["group"],
+            "description": current["description"],
+            "note": current["note"],
+            "schedule_label": current["schedule_label"],
+            "schedule": current["schedule"],
+            "next_run_at": current["next_run_at"],
+            "enabled": current["enabled"],
+            "command": current["command"],
+            "work_path": current["work_path"],
+            "editable_paths": list(task.editable_paths),
+            "context_files": list(task.context_files),
+            "verify_commands": [list(command) for command in task.verify_commands],
+            "telegram_chat_id": current["telegram_chat_id"],
+            "telegram_group_name": current["telegram_group_name"],
+            "config_preview": current["config_preview"],
+            "workflow_steps": current["workflow_steps"],
+            "latest_run": current["last_run"],
+            "recent_runs": current["recent_runs"][:3],
+            "latest_results": current["latest_results"][:3],
+            "latest_ai_job": latest_job or {},
+        }
+        full_group_cards = group_cards or [current]
+        if all(item["id"] != current["id"] for item in full_group_cards):
+            full_group_cards = [current, *full_group_cards]
+        other_tasks = [item for item in full_group_cards if item["id"] != task.id]
+        group_task_summaries = [
+            {
+                "id": item["id"],
+                "name": item["name"],
+                "reply_name": item["reply_name"],
+                "schedule_label": item["schedule_label"],
+                "enabled": item["enabled"],
+                "next_run_at": item["next_run_at"],
+                "latest_run_status": (item.get("last_run") or {}).get("status", ""),
+                "latest_run_summary": (item.get("last_run") or {}).get("summary", ""),
+                "workflow_title": item["workflow_steps"][0]["title"] if item["workflow_steps"] else "",
+                "work_path": item["work_path"],
+            }
+            for item in other_tasks
+        ]
+        enabled_count = sum(1 for item in full_group_cards if item["enabled"])
+        latest_failure = next(
+            (
+                item["name"]
+                for item in full_group_cards
+                if (item.get("last_run") or {}).get("status") == "failed"
+            ),
+            "",
+        )
+        group_summary = (
+            f"当前群对应分组 {task.group} 共 {len(full_group_cards)} 个任务，"
+            f"启用 {enabled_count} 个，最近失败任务: {latest_failure or '无'}"
+        )
+        return {
+            "chat_id": str(chat_id or current["telegram_chat_id"] or ""),
+            "group_id": task.group,
+            "group_name": get_agent_meta(task.group)["name"],
+            "group_summary": group_summary,
+            "current_task_detail": current_task_detail,
+            "group_task_summaries": group_task_summaries,
+        }
     def list_agent_cards(self, now: datetime | None = None) -> list[dict[str, Any]]:
         tasks = self.list_task_cards(now=now)
         grouped: dict[str, list[dict[str, Any]]] = {}
@@ -580,3 +677,7 @@ def _task_has_alert(
         )
         return _text_has_alert(text)
     return False
+
+
+def _serialize_workflow_steps(task: TaskDefinition) -> list[dict[str, str]]:
+    return [{"title": step.title, "detail": step.detail} for step in task.workflow_steps]

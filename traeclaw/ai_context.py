@@ -33,16 +33,26 @@ class AiContextManager:
     def reset_session(self, session_id: int) -> None:
         self.db.reset_ai_session_context(session_id)
 
-    def build_context(self, session_id: int, current_text: str) -> dict[str, Any]:
+    def build_context(
+        self,
+        session_id: int,
+        current_text: str,
+        app: Any | None = None,
+        task: Any | None = None,
+    ) -> dict[str, Any]:
         session = self.db.get_ai_session(session_id) or {}
         recent_messages = self.db.list_ai_messages(session_id, include_archived=False, limit=6)
         recent_jobs = self.db.list_ai_jobs(limit=3, session_id=session_id)
+        task_context = {}
+        if app and session:
+            task_context = app.build_ai_task_context(task or session["task_id"], session["chat_id"])
         return {
             "session": session,
             "session_summary": session.get("session_summary", ""),
             "recent_messages": recent_messages,
             "recent_jobs": recent_jobs,
             "current_text": current_text,
+            "task_context": task_context,
         }
 
     def _compact_session(self, session_id: int) -> None:

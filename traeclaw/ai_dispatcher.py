@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import threading
 from pathlib import Path
@@ -96,20 +97,19 @@ class TelegramAiDispatcher:
             return
 
         session = self.context_manager.get_or_create_session(task.id, chat_id, message_thread_id)
-        self.context_manager.add_message(session["id"], "user", clean_text, update_id=update["update_id"])
-
         command = clean_text.strip().lower()
         if command == "reset":
             self.context_manager.reset_session(session["id"])
             self.notifier(chat_id, f"{task.reply_name} 会话已重置", message_thread_id)
             return
         if command == "status":
-            context = self.context_manager.build_context(session["id"], "")
-            latest_job = (self.db.list_ai_jobs(limit=1, session_id=session["id"]) or [{}])[0]
-            summary = context["session_summary"] or "暂无摘要"
-            self.notifier(chat_id, f"{task.reply_name} 状态\n{summary}\n最近作业: {latest_job.get('status', '无')}", message_thread_id)
+            self.notifier(chat_id, self._build_status_reply(task, session["id"], chat_id), message_thread_id)
+            return
+        if command == "tasks":
+            self.notifier(chat_id, self._build_tasks_reply(task, chat_id), message_thread_id)
             return
 
+        self.context_manager.add_message(session["id"], "user", clean_text, update_id=update["update_id"])
         if self.db.find_running_ai_job(task.id):
             self.notifier(chat_id, "正在处理中，请稍后", message_thread_id)
             return
@@ -132,7 +132,8 @@ class TelegramAiDispatcher:
         try:
             provider_name = self.db.get_ai_job(job_id)["provider"]
             provider = self.provider_factory(provider_name)
-            payload = provider.generate(self._build_prompt(task, session["id"], request_text))
+            prompt = self._build_prompt(task, session["id"], request_text, provider_name=provider_name)
+            payload = provider.generate(prompt)
             patch_result = self.executor.apply(task, payload)
             reply_text = self._build_reply(payload, patch_result, None)
             final_status = "failed"
@@ -173,8 +174,8 @@ class TelegramAiDispatcher:
         self.context_manager.add_message(session["id"], "assistant", reply_text)
         self.notifier(chat_id, reply_text, message_thread_id)
 
-    def _build_prompt(self, task, session_id: int, request_text: str) -> str:
-        context = self.context_manager.build_context(session_id, request_text)
+    def _build_prompt(self, task, session_id: int, request_text: str, provider_name: str = "") -> str:
+        context = self.context_manager.build_context(session_id, request_text, app=self.app, task=task)
         file_sections = []
         for rel_path in task.context_files:
             target = Path(self.app.project_root) / rel_path
@@ -186,6 +187,13 @@ class TelegramAiDispatcher:
             if content:
                 file_sections.append(f"[{rel_path}]\n{content[:4000]}")
         latest_run = self.db.get_latest_run(task.id) or {}
+        task_context = context.get("task_context") or {}
+        context_hash = self._context_snapshot_hash(task_context)
+        self.db.update_ai_session_state(
+            session_id,
+            provider_model=self._provider_model(provider_name),
+            context_snapshot_hash=context_hash,
+        )
         prompt = {
             "task": task.reply_name or task.name,
             "request_text": request_text,
@@ -194,6 +202,16 @@ class TelegramAiDispatcher:
             "recent_messages": [
                 {"role": item["role"], "text": item["message_text"]}
                 for item in context["recent_messages"]
+            ],
+            "task_context": task_context,
+            "recent_job_summaries": [
+                {
+                    "status": item["status"],
+                    "files_touched": item["files_touched"],
+                    "reply_text": item["reply_text"][:300],
+                    "verification_status": item["verification_status"],
+                }
+                for item in context["recent_jobs"]
             ],
             "latest_run_summary": latest_run.get("summary", ""),
             "context_files": file_sections,
@@ -250,3 +268,43 @@ class TelegramAiDispatcher:
         if clean.startswith("@bot"):
             clean = clean[4:].strip()
         return clean
+
+    def _build_status_reply(self, task, session_id: int, chat_id: str) -> str:
+        context = self.context_manager.build_context(session_id, "", app=self.app)
+        latest_job = (self.db.list_ai_jobs(limit=1, session_id=session_id) or [{}])[0]
+        task_context = context.get("task_context") or {}
+        current = task_context.get("current_task_detail") or {}
+        return "\n".join(
+            [
+                f"当前任务: {current.get('name') or task.name}",
+                f"工作路径: {current.get('work_path') or '-'}",
+                f"计划: {current.get('schedule_label') or task.schedule_label}",
+                f"最近运行: {(current.get('latest_run') or {}).get('summary') or '暂无'}",
+                f"最近作业: {latest_job.get('status', '无')}",
+                f"会话摘要: {context.get('session_summary') or '暂无摘要'}",
+                f"分组摘要: {task_context.get('group_summary') or '暂无'}",
+            ]
+        )
+
+    def _build_tasks_reply(self, task, chat_id: str) -> str:
+        task_context = self.app.build_ai_task_context(task.id, chat_id)
+        lines = [f"任务列表: {task_context.get('group_name') or task.group}"]
+        current = task_context.get("current_task_detail") or {}
+        current_status = (current.get("latest_run") or {}).get("status") or "未运行"
+        lines.append(
+            f"- {current.get('name') or task.name} | {current.get('schedule_label') or task.schedule_label} | {current_status}"
+        )
+        for item in task_context.get("group_task_summaries") or []:
+            status = item.get("latest_run_status") or "未运行"
+            lines.append(f"- {item['name']} | {item['schedule_label']} | {status}")
+        return "\n".join(lines)
+
+    def _provider_model(self, provider_name: str) -> str:
+        settings = AiSettings.load_private(self.db)
+        if provider_name == "gemini":
+            return settings["gemini_cli_command"] or "gemini"
+        return settings["deepseek_model"] or "deepseek-chat"
+
+    def _context_snapshot_hash(self, task_context: dict[str, Any]) -> str:
+        raw = json.dumps(task_context or {}, ensure_ascii=False, sort_keys=True)
+        return hashlib.sha256(raw.encode("utf-8")).hexdigest()

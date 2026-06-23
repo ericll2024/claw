@@ -21,6 +21,94 @@ AGENTS = {
 
 
 @dataclass(frozen=True)
+class WorkflowStep:
+    title: str
+    detail: str
+
+
+def _steps(*items: tuple[str, str]) -> tuple[WorkflowStep, ...]:
+    return tuple(WorkflowStep(title=title, detail=detail) for title, detail in items)
+
+
+TASK_WORKFLOWS: dict[str, tuple[WorkflowStep, ...]] = {
+    "cp.predict": _steps(
+        ("加载历史数据", "连接 traerclaw.sqlite3 数据库，读取双色球最新期号，并载入最近 100 期中奖号码。"),
+        ("运行预测算法", "基于历史开奖数据运行概率算法和过滤规则，生成候选号码组合并评分。"),
+        ("生成推荐方案", "整理评分最高的前几组双色球推荐号码方案。"),
+        ("保存预测结果", "将预测结果持久化到 SQLite，供后续开奖复盘使用。"),
+    ),
+    "cp.check_result": _steps(
+        ("拉取最新开奖", "请求开奖接口，带重试获取双色球最新开奖号码。"),
+        ("写入开奖历史", "将最新中奖号码写入本地数据库历史表。"),
+        ("读取预测方案", "查询之前为该期生成的预测号码方案。"),
+        ("结算与复盘", "比对预测与开奖结果，生成复盘结算信息并通知 Telegram。"),
+    ),
+    "tycp.dlt_recommend": _steps(
+        ("生成预算组合", "按预算档位生成大乐透复式票组合方案。"),
+        ("保存推荐方案", "把方案和投注明细持久化到 SQLite。"),
+    ),
+    "tycp.dlt_fetch": _steps(
+        ("拉取最新开奖", "调用体彩接口增量更新大乐透开奖结果。"),
+        ("比对结算复盘", "对照历史推荐方案计算中奖情况并生成报告。"),
+    ),
+    "mfood.maskphone_monitor": _steps(
+        ("读取登录 Token", "从设置中读取 mFood 登录 Token，缺失则报错中断。"),
+        ("访问隐私号 API", "调用管理后台接口抓取当天隐私号使用详情。"),
+        ("监测使用限额", "计算当前使用量与阈值，判断是否超限。"),
+        ("推送报警消息", "超阈值时生成报警消息并通过 Telegram 推送。"),
+    ),
+    "mfood.order_monitor": _steps(
+        ("拉取配置及 Token", "读取 mFood 登录凭证、神策密钥和阈值配置。"),
+        ("获取神策订单数", "查询昨日埋点系统中的订单量与金额。"),
+        ("提取 mFood 账单", "调用 mFood 商家后台接口抓取真实订单数据。"),
+        ("差异校验与通知", "计算差异并在超阈值时输出对账报告和报警。"),
+    ),
+    "mfood.takeout_business_analysis": _steps(
+        ("解析店铺配置", "读取外卖店铺配置和全局 Token。"),
+        ("请求营业数据", "调用营业分析接口抓取指定日期的营业指标。"),
+        ("拉取订单复查", "营业额异常时再查订单列表进行二次核对。"),
+        ("异常诊断与推送", "发现营业数据和订单数据不一致时推送报警。"),
+    ),
+    "mfood.market_business_analysis": _steps(
+        ("解析超市配置", "读取超市配置和全局 Token。"),
+        ("获取超市营业数据", "调用超市营业数据接口抓取核心指标。"),
+        ("提取超市订单明细", "营业额异常时再查订单明细接口复核。"),
+        ("指标计算与播报", "确认异常后生成超市营业异常通知。"),
+    ),
+    "mfood.market_summary": _steps(
+        ("加载对账配置", "读取超市汇总对账配置和登录 Token。"),
+        ("调取超市汇总报表", "调用汇总接口抓取全商户超市结算数据。"),
+        ("核对资金流向", "对异常记录进行二次订单复核。"),
+        ("异常核算并播报", "发现资金流异常时通过 Telegram 发送报警。"),
+    ),
+    "mfood.merchant_summary": _steps(
+        ("加载外卖汇总配置", "读取外卖商户汇总配置和登录 Token。"),
+        ("请求商户对账单", "调用商户汇总接口抓取销售和结算数据。"),
+        ("处理账目不匹配项", "对异常记录调用订单接口做二次核验。"),
+        ("差异结算报告与报警", "确认对账异常后生成报告并推送。"),
+    ),
+    "shence.order_reconcile": _steps(
+        ("配置时间区间", "计算默认的昨日时间区间参数。"),
+        ("运行神策 SQL", "调用神策 API 查询埋点订单数据。"),
+        ("获取 mFood 账单", "登录并拉取 mFood 管理后台订单记录。"),
+        ("双端比对及报警", "比对两端差异，异常时写库并推送通知。"),
+    ),
+    "facebook.yesterday_summary": _steps(
+        ("读取监测群组", "加载 Facebook 群组配置和已有登录态。"),
+        ("启动 Playwright", "启动浏览器并复用 cookies 登录状态。"),
+        ("遍历抓取贴文", "抓取昨日群组贴文、互动数据和内容。"),
+        ("内容摘要与通知", "汇总生成摘要并按需推送 Telegram。"),
+    ),
+    "crowd.pull_report": _steps(
+        ("遍历众包仓库", "读取需要监控的本地仓库路径。"),
+        ("执行代码同步", "对每个仓库执行 fetch 和 fast-forward pull。"),
+        ("比对提交日志", "比较更新前后 HEAD 并提取新增提交摘要。"),
+        ("生成播报并发送", "聚合更新日志并发送到 Telegram。"),
+    ),
+}
+
+
+@dataclass(frozen=True)
 class TaskDefinition:
     id: str
     name: str
@@ -38,6 +126,7 @@ class TaskDefinition:
     context_files: tuple[str, ...] = field(default_factory=tuple)
     verify_commands: tuple[tuple[str, ...], ...] = field(default_factory=tuple)
     reply_name: str = ""
+    workflow_steps: tuple[WorkflowStep, ...] = field(default_factory=tuple)
 
     def next_run_after(self, now: datetime) -> datetime | None:
         if now.tzinfo is None:
@@ -90,6 +179,7 @@ def list_tasks() -> list[TaskDefinition]:
             context_files=("traeclaw/tasks/cp.py", "scripts/cp/cp_prediction_core.py"),
             verify_commands=verify,
             reply_name="CP 双色球推荐",
+            workflow_steps=TASK_WORKFLOWS["cp.predict"],
         ),
         TaskDefinition(
             id="cp.check_result",
@@ -105,6 +195,7 @@ def list_tasks() -> list[TaskDefinition]:
             context_files=("traeclaw/tasks/cp.py", "scripts/cp/check_result_and_notify.sh"),
             verify_commands=verify,
             reply_name="CP 开奖复盘",
+            workflow_steps=TASK_WORKFLOWS["cp.check_result"],
         ),
         TaskDefinition(
             id="tycp.dlt_recommend",
@@ -120,6 +211,7 @@ def list_tasks() -> list[TaskDefinition]:
             context_files=("scripts/tycp/dlt_recommend_budget.py",),
             verify_commands=verify,
             reply_name="大乐透推荐",
+            workflow_steps=TASK_WORKFLOWS["tycp.dlt_recommend"],
         ),
         TaskDefinition(
             id="tycp.dlt_fetch",
@@ -135,6 +227,7 @@ def list_tasks() -> list[TaskDefinition]:
             context_files=("scripts/tycp/check_result.py",),
             verify_commands=verify,
             reply_name="大乐透开奖复盘",
+            workflow_steps=TASK_WORKFLOWS["tycp.dlt_fetch"],
         ),
         TaskDefinition(
             id="mfood.maskphone_monitor",
@@ -149,6 +242,7 @@ def list_tasks() -> list[TaskDefinition]:
             context_files=("scripts/mFood/qinglong_maskphone_monitor.py", "state/mfdb/maskphone_monitor_config.json"),
             verify_commands=verify,
             reply_name="mFood 隐私号监控",
+            workflow_steps=TASK_WORKFLOWS["mfood.maskphone_monitor"],
         ),
         TaskDefinition(
             id="mfood.order_monitor",
@@ -163,6 +257,7 @@ def list_tasks() -> list[TaskDefinition]:
             context_files=("traeclaw/mfood/order_monitor.py", "state/mfdb/order_monitor_config.json"),
             verify_commands=verify,
             reply_name="mFood 订单数据检查",
+            workflow_steps=TASK_WORKFLOWS["mfood.order_monitor"],
         ),
         TaskDefinition(
             id="mfood.takeout_business_analysis",
@@ -177,6 +272,7 @@ def list_tasks() -> list[TaskDefinition]:
             context_files=("scripts/mFood/takeout_business_analysis_check.py", "state/mfdb/takeout_business_analysis_check_config.json"),
             verify_commands=verify,
             reply_name="mFood 外卖营业分析",
+            workflow_steps=TASK_WORKFLOWS["mfood.takeout_business_analysis"],
         ),
         TaskDefinition(
             id="mfood.market_business_analysis",
@@ -191,6 +287,7 @@ def list_tasks() -> list[TaskDefinition]:
             context_files=("scripts/mFood/market_business_analysis_check.py", "state/mfdb/market_business_analysis_check_config.json"),
             verify_commands=verify,
             reply_name="mFood 超市营业分析",
+            workflow_steps=TASK_WORKFLOWS["mfood.market_business_analysis"],
         ),
         TaskDefinition(
             id="mfood.market_summary",
@@ -205,6 +302,7 @@ def list_tasks() -> list[TaskDefinition]:
             context_files=("scripts/mFood/market_summary_check.py", "state/mfdb/market_summary_check_config.json"),
             verify_commands=verify,
             reply_name="mFood 超市汇总检查",
+            workflow_steps=TASK_WORKFLOWS["mfood.market_summary"],
         ),
         TaskDefinition(
             id="mfood.merchant_summary",
@@ -219,6 +317,7 @@ def list_tasks() -> list[TaskDefinition]:
             context_files=("scripts/mFood/merchant_summary_check.py", "state/mfdb/merchant_summary_check_config.json"),
             verify_commands=verify,
             reply_name="mFood 商户汇总检查",
+            workflow_steps=TASK_WORKFLOWS["mfood.merchant_summary"],
         ),
         TaskDefinition(
             id="shence.order_reconcile",
@@ -233,6 +332,7 @@ def list_tasks() -> list[TaskDefinition]:
             context_files=("scripts/shence/shence_order_reconcile.py",),
             verify_commands=verify,
             reply_name="神策订单对账",
+            workflow_steps=TASK_WORKFLOWS["shence.order_reconcile"],
         ),
         TaskDefinition(
             id="facebook.yesterday_summary",
@@ -247,6 +347,7 @@ def list_tasks() -> list[TaskDefinition]:
             context_files=("scripts/fb/fb_yesterday_summary.sh", "state/facebook/fb_groups.json"),
             verify_commands=verify,
             reply_name="Facebook 群组昨日摘要",
+            workflow_steps=TASK_WORKFLOWS["facebook.yesterday_summary"],
         ),
         TaskDefinition(
             id="crowd.pull_report",
@@ -262,6 +363,7 @@ def list_tasks() -> list[TaskDefinition]:
             context_files=("scripts/crowd/crowd_pull_report.sh",),
             verify_commands=verify,
             reply_name="众包代码更新播报",
+            workflow_steps=TASK_WORKFLOWS["crowd.pull_report"],
         ),
     ]
 
