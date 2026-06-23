@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import ssl
 import threading
 import time
 import urllib.request
@@ -11,6 +12,12 @@ from urllib.parse import urlencode
 
 from .db import AppDatabase, mask_secret, utc_now
 
+# Create unverified SSL context to handle proxies/VPNs re-signing certs on Windows
+try:
+    _ssl_context = ssl._create_unverified_context()
+except AttributeError:
+    _ssl_context = None
+
 
 def post_json(url: str, payload: dict[str, Any], timeout: int = 20) -> dict[str, Any]:
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -20,14 +27,20 @@ def post_json(url: str, payload: dict[str, Any], timeout: int = 20) -> dict[str,
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=timeout) as response:
+    kwargs = {}
+    if _ssl_context is not None:
+        kwargs["context"] = _ssl_context
+    with urllib.request.urlopen(req, timeout=timeout, **kwargs) as response:
         return json.loads(response.read().decode("utf-8"))
 
 
 def get_json(url: str, params: dict[str, Any] | None = None, timeout: int = 20) -> dict[str, Any]:
     if params:
         url = f"{url}?{urlencode(params)}"
-    with urllib.request.urlopen(url, timeout=timeout) as response:
+    kwargs = {}
+    if _ssl_context is not None:
+        kwargs["context"] = _ssl_context
+    with urllib.request.urlopen(url, timeout=timeout, **kwargs) as response:
         return json.loads(response.read().decode("utf-8"))
 
 
@@ -262,7 +275,10 @@ def initialize_chat_titles_bg(db: AppDatabase) -> None:
                     url = f"https://api.telegram.org/bot{bot_token}/getChat?chat_id={chat_id}"
                     try:
                         req = urllib.request.Request(url)
-                        with urllib.request.urlopen(req, timeout=10) as response:
+                        kwargs = {}
+                        if _ssl_context is not None:
+                            kwargs["context"] = _ssl_context
+                        with urllib.request.urlopen(req, timeout=10, **kwargs) as response:
                             payload = json.loads(response.read().decode("utf-8"))
                             if payload.get("ok"):
                                 result = payload["result"]

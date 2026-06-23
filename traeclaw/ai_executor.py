@@ -90,10 +90,12 @@ class AiPatchExecutor:
             return False
 
     def _run_verifications(self, task: TaskDefinition) -> tuple[str, str]:
+        from .runner import adjust_command
         outputs = []
         for command in task.verify_commands:
+            cmd = adjust_command(list(command), self.project_root)
             completed = subprocess.run(
-                list(command),
+                cmd,
                 cwd=self.project_root,
                 capture_output=True,
                 text=True,

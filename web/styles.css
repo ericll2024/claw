@@ -471,7 +471,8 @@ h2 {
   line-height: 1.55;
 }
 
-.runs-panel {
+.runs-panel,
+.tasks-panel {
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -1426,18 +1427,22 @@ code {
 
 /* 子任務表格自定義樣式 */
 .tasks-table-wrap {
+  flex: 1;
   border: 1px solid var(--line);
   border-radius: 6px;
   background: var(--panel);
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: auto;
   margin-top: 12px;
   width: 100%;
+  min-height: 0;
 }
 
 .tasks-table {
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
+  min-width: 960px;
 }
 
 .tasks-table th,
@@ -1449,13 +1454,17 @@ code {
 }
 
 .tasks-table th {
-  background: rgba(0, 0, 0, 0.15);
+  background: #fafbfc;
   color: var(--muted);
   font-weight: 600;
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   text-align: center;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  border-bottom: 1px solid var(--line);
 }
 
 .tasks-table tr:last-child td {

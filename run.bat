@@ -42,8 +42,8 @@ if %errorlevel% neq 0 (
         pause
         exit /b 1
     ) else (
-        py run.py serve
+        py run.py serve --host 0.0.0.0
     )
 ) else (
-    python run.py serve
+    python run.py serve --host 0.0.0.0
 )

@@ -289,22 +289,24 @@ function renderAgentDetail() {
 
 function renderTaskList(agent) {
   return `
-    <div class="tasks-table-wrap">
-      <table class="tasks-table">
-        <thead>
-          <tr>
-            <th>子任务</th>
-            <th>时间配置 / 下次</th>
-            <th>最近运行</th>
-            <th>TG 通知群</th>
-            <th style="width: 100px;">状态</th>
-            <th style="width: 380px;">操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${agent.tasks.map((task, idx) => renderTaskRow(task, idx, agent.tasks.length)).join("")}
-        </tbody>
-      </table>
+    <div class="tasks-panel">
+      <div class="tasks-table-wrap">
+        <table class="tasks-table">
+          <thead>
+            <tr>
+              <th>子任务</th>
+              <th>时间配置 / 下次</th>
+              <th>最近运行</th>
+              <th>TG 通知群</th>
+              <th style="width: 100px;">状态</th>
+              <th style="width: 380px;">操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${agent.tasks.map((task, idx) => renderTaskRow(task, idx, agent.tasks.length)).join("")}
+          </tbody>
+        </table>
+      </div>
     </div>
   `;
 }
@@ -408,6 +410,7 @@ function renderRunsTable(runs, isLoading) {
             <th>子任务</th>
             <th>状态</th>
             <th>触发</th>
+            <th>TG 通知</th>
             <th>耗时</th>
             <th>结果</th>
             <th style="width: 150px; text-align: center;">操作</th>
@@ -436,6 +439,19 @@ function renderRunRow(run) {
   } else if (run.trigger_type && run.trigger_type !== "manual") {
     triggerLabel = run.trigger_type;
   }
+
+  let notifyLabel = "";
+  const ns = (run.notify_status || "").toLowerCase();
+  if (ns === "sent" || ns === "success") {
+    notifyLabel = `<span class="badge success">已发送</span>`;
+  } else if (ns === "failed") {
+    notifyLabel = `<span class="badge failed" style="cursor: help;" title="${escapeHtml(run.notify_error || '未知错误')}">发送失败 ❓</span>`;
+  } else if (ns === "skipped") {
+    notifyLabel = `<span class="badge" style="background: #e2e8f0; color: #4a5568;">已略过</span>`;
+  } else {
+    notifyLabel = `<span class="badge" style="background: transparent; border: 1px solid var(--line); color: var(--muted);">未发送</span>`;
+  }
+
   return `
     <tr>
       <td>${escapeHtml(formatDate(run.started_at))}</td>
@@ -445,6 +461,7 @@ function renderRunRow(run) {
       </td>
       <td>${statusBadge(run.status)}</td>
       <td>${escapeHtml(triggerLabel)}</td>
+      <td>${notifyLabel}</td>
       <td>${escapeHtml(formatDuration(run.duration_ms))}</td>
       <td class="run-summary">${escapeHtml(run.summary || run.stderr || run.stdout || "无")}</td>
       <td style="text-align: center; vertical-align: middle;">

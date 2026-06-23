@@ -59,8 +59,9 @@ class TaskRunner:
                 file_path.write_text(content, encoding="utf-8")
 
         try:
+            cmd = adjust_command(list(task.command), self.project_root)
             completed = subprocess.run(
-                list(task.command),
+                cmd,
                 cwd=self.project_root,
                 env=self._env(),
                 capture_output=True,
@@ -296,3 +297,37 @@ def _payload_has_alert(value: Any) -> bool:
 def _text_has_alert(value: str) -> bool:
     alert_words = ("报警", "告警", "异常")
     return any(word in value for word in alert_words)
+
+
+def adjust_command(cmd: list[str], project_root: str | Path) -> list[str]:
+    if not cmd:
+        return cmd
+    cmd = list(cmd)
+    import sys
+    if cmd[0] == "python3" and sys.platform == "win32":
+        cmd[0] = sys.executable or "python"
+
+    first = cmd[0].lower()
+    is_python = (
+        first in ("python", "python3", "pythonw") or
+        first.endswith(("/python", "\\python", "/python.exe", "\\python.exe", "/pythonw.exe", "\\pythonw.exe"))
+    )
+    if is_python and len(cmd) >= 3 and cmd[1] == "-m":
+        module_name = cmd[2]
+        if module_name.startswith("traeclaw.") or module_name == "traeclaw":
+            bootstrap = (
+                f"import sys; "
+                f"sys.path.insert(0, {str(project_root)!r}); "
+                f"from {module_name} import main; "
+                f"sys.exit(main(sys.argv[1:]))"
+            )
+            return [cmd[0], "-c", bootstrap] + cmd[3:]
+        elif module_name == "pytest":
+            bootstrap = (
+                f"import sys; "
+                f"sys.path.insert(0, {str(project_root)!r}); "
+                f"import pytest; "
+                f"sys.exit(pytest.main(sys.argv[1:]))"
+            )
+            return [cmd[0], "-c", bootstrap] + cmd[3:]
+    return cmd

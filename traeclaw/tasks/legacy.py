@@ -22,6 +22,7 @@ def db_path() -> Path:
 def rewrite_legacy_source(source: str, root: str | Path, shared_db: str | Path) -> str:
     root_text = str(Path(root))
     db_text = str(Path(shared_db))
+    db_text_escaped = db_text.replace("\\", "\\\\")
     
     # Replace WORKSPACE and ROOT variables
     source = source.replace(
@@ -52,32 +53,32 @@ def rewrite_legacy_source(source: str, root: str | Path, shared_db: str | Path) 
     # Redirect DB_PATH variables to unified traeclaw.sqlite3
     source = re.sub(
         r'DB_PATH\s*=\s*f"\{STATE_DIR\}/[^"]+"',
-        f"DB_PATH = {db_text!r}",
+        f"DB_PATH = {db_text_escaped!r}",
         source,
     )
     source = re.sub(
         r"DB_PATH\s*=\s*f'\{STATE_DIR\}/[^']+'",
-        f"DB_PATH = {db_text!r}",
+        f"DB_PATH = {db_text_escaped!r}",
         source,
     )
     source = re.sub(
         r"DB_PATH\s*=\s*Path\('/home/eric/Documents/workspace/state/[^']+'\)",
-        f"DB_PATH = Path({db_text!r})",
+        f"DB_PATH = Path({db_text_escaped!r})",
         source,
     )
     source = re.sub(
         r'DB_PATH\s*=\s*Path\("/home/eric/Documents/workspace/state/[^"]+"\)',
-        f"DB_PATH = Path({db_text!r})",
+        f"DB_PATH = Path({db_text_escaped!r})",
         source,
     )
     source = re.sub(
         r"DEFAULT_DB\s*=\s*ROOT\s*/\s*'state'[^'\n]+",
-        f"DEFAULT_DB = Path({db_text!r})",
+        f"DEFAULT_DB = Path({db_text_escaped!r})",
         source,
     )
     source = re.sub(
         r'DEFAULT_DB\s*=\s*ROOT\s*/\s*"state"[^"\n]+',
-        f"DEFAULT_DB = Path({db_text!r})",
+        f"DEFAULT_DB = Path({db_text_escaped!r})",
         source,
     )
 
