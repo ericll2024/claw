@@ -82,10 +82,11 @@ class TraeclawApp:
         self.ai_dispatcher.stop()
 
     def import_legacy_sources(self) -> list[dict[str, Any]]:
+        state_dir = self.project_root / "code" / "state" if (self.project_root / "code" / "state").is_dir() else self.project_root / "state"
         sources = [
-            self.project_root / "state" / "cp" / "doublecolor.db",
-            self.project_root / "state" / "mfdb" / "maskphone_monitor.db",
-            self.project_root / "state" / "scjk" / "shence_monitor.db",
+            state_dir / "cp" / "doublecolor.db",
+            state_dir / "mfdb" / "maskphone_monitor.db",
+            state_dir / "scjk" / "shence_monitor.db",
         ]
         return [self.db.import_sqlite_tables(source) for source in sources if source.exists()]
 
