@@ -104,14 +104,20 @@ def check_result() -> dict[str, Any]:
 
 
 def _prediction_summary(result: dict[str, Any]) -> str:
-    prefix = "已存在" if result.get("mode") == "existing" else "已生成"
-    lines = [f"第 {result.get('issue_code', '')} 期预测{prefix}。"]
+    lines = [f"第 {result.get('issue_code', '')} 期预测"]
+    label_map = {
+        "main": " 8+1:  ",
+        "reference": " 9+1:  ",
+        "budget_500": "10+1: ",
+        "budget_1000": "11+1: "
+    }
     for plan in result.get("plans", [])[:4]:
+        pt = plan.get("plan_type")
+        label = label_map.get(pt, f"{pt}: ")
         summary = plan.get("summary") or {}
         sample = (summary.get("sample_reds") or [""])[0]
         lines.append(
-            f"{summary.get('label', plan.get('plan_type'))}: 红球 {sample}，"
-            f"蓝球 {summary.get('blues', '')}，成本 {summary.get('cost', 0)} 元"
+            f"{label}红球 {sample}，蓝球 {summary.get('blues', '')}，成本 {summary.get('cost', 0)} 元"
         )
     return "\n".join(lines)
 
