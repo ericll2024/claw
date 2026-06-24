@@ -113,39 +113,87 @@ class MFoodLogin:
         account = settings.get("account") or os.environ.get("MFOOD_ACCOUNT")
         if not account:
             raise RuntimeError("mFood 账号缺失：请设置 MFOOD_ACCOUNT 环境变量")
-        self._write_defaults(settings, account)
-        args = [
-            "node",
-            str(self.script_path),
-            "--profile",
-            settings.get("profile") or "default",
-            "--cache-path",
-            str(self.state_dir / "cache.json"),
-            "--defaults-path",
-            str(self.state_dir / "defaults.json"),
-            "--format",
-            "json",
-        ]
-        if force_refresh:
-            args.append("--force-refresh")
-        env = os.environ.copy()
-        env["CODEX_HOME"] = str(self.project_root / "code")
-        completed = subprocess.run(
-            args,
-            cwd=self.project_root,
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=300,
-            check=False,
+
+        password_md5 = settings["password_md5"]
+
+        import time
+        import uuid
+        import hashlib
+        import hmac
+        import base64
+        import requests
+
+        url = "https://management-api.mfoodapp.com/token/_get"
+        timestamp = str(int(time.time() * 1000))
+        nonce = hashlib.md5(("1" + timestamp).encode("utf-8")).hexdigest()
+
+        scope = "manager"
+        client = "web"
+        client_version = "9.0.0"
+        ca_secret = "5fde65edc94340458a4411d412bdc454"
+
+        canonical = (
+            "POST\n"
+            f"x-ca-timestamp:{timestamp}\n"
+            f"x-ca-nonce:{nonce}\n"
+            f"x-scope:{scope}\n"
+            f"x-client:{client}\n"
+            f"x-client-version:{client_version}\n"
         )
-        if completed.returncode != 0:
-            raise RuntimeError(completed.stderr.strip() or completed.stdout.strip() or "mFood token 获取失败")
-        res_data = json.loads(completed.stdout)
-        token = res_data.get("token")
-        if token:
-            self.db.set_setting("mfood.login.token", token, is_secret=True)
-        return res_data
+        signature = base64.b64encode(
+            hmac.new(ca_secret.encode("utf-8"), canonical.encode("utf-8"), hashlib.sha256).digest()
+        ).decode("utf-8")
+
+        headers = {
+            "accept": "application/json",
+            "content-type": "application/json;charset=UTF-8",
+            "origin": "https://manager.mfoodapp.com",
+            "referer": "https://manager.mfoodapp.com/",
+            "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36",
+            "x-app-code-name": "Mozilla",
+            "x-app-name": "Netscape",
+            "x-app-version": "5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36",
+            "x-browser-language": "zh",
+            "x-ca-key": "83579288",
+            "x-ca-nonce": nonce,
+            "x-ca-signature": signature,
+            "x-ca-timestamp": timestamp,
+            "x-city-id": "",
+            "x-city-name": "",
+            "x-client": client,
+            "x-client-version": client_version,
+            "x-ip": "",
+            "x-platform": "MacIntel",
+            "x-scope": scope,
+            "x-user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36",
+        }
+
+        body = {
+            "loginType": 1,
+            "account": account,
+            "password": password_md5
+        }
+
+        try:
+            resp = requests.post(url, json=body, headers=headers, timeout=15)
+            if resp.status_code != 200:
+                try:
+                    err_data = resp.json()
+                    msg = err_data.get("note") or err_data.get("message") or f"HTTP {resp.status_code}"
+                except Exception:
+                    msg = f"HTTP {resp.status_code}"
+                raise RuntimeError(msg)
+            
+            res_data = resp.json()
+            token = res_data.get("token")
+            if token:
+                self.db.set_setting("mfood.login.token", token, is_secret=True)
+            return res_data
+        except Exception as exc:
+            if isinstance(exc, RuntimeError):
+                raise
+            raise RuntimeError(str(exc))
+
 
     def _write_defaults(self, settings: dict[str, Any], account: str) -> None:
         self.state_dir.mkdir(parents=True, exist_ok=True)

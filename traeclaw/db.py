@@ -34,7 +34,7 @@ class AppDatabase:
     @contextmanager
     def connect(self) -> Iterator[sqlite3.Connection]:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        conn = sqlite3.connect(self.path)
+        conn = sqlite3.connect(self.path, timeout=30.0)
         conn.row_factory = sqlite3.Row
         try:
             conn.execute("PRAGMA foreign_keys = ON")
@@ -45,6 +45,7 @@ class AppDatabase:
 
     def initialize(self) -> None:
         with self.connect() as conn:
+            conn.execute("PRAGMA journal_mode = WAL")
             conn.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS settings (

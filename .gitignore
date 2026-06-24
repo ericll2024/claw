@@ -46,4 +46,5 @@ state/
 tmp/
 **/cache.json
 **/defaults.json
-
+node_modules/
+web/node_modules/

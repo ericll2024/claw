@@ -1547,3 +1547,55 @@ loadTasks().catch((error) => {
   agentsList.innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`;
   agentDetail.innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`;
 });
+
+// 重启服务事件监听
+const restartBtn = document.querySelector("#restartBtn");
+if (restartBtn) {
+  restartBtn.addEventListener("click", async () => {
+    if (!confirm("是否确认重启服务？")) {
+      return;
+    }
+    restartBtn.disabled = true;
+    restartBtn.textContent = "正在重启...";
+    try {
+      await api("/api/restart", { method: "POST" });
+    } catch (e) {
+      console.log("Restart request sent. Server terminating...", e);
+    }
+    
+    const overlay = document.createElement("div");
+    overlay.style.position = "fixed";
+    overlay.style.top = "0";
+    overlay.style.left = "0";
+    overlay.style.width = "100%";
+    overlay.style.height = "100%";
+    overlay.style.background = "rgba(0,0,0,0.7)";
+    overlay.style.color = "#fff";
+    overlay.style.display = "flex";
+    overlay.style.alignItems = "center";
+    overlay.style.justifyContent = "center";
+    overlay.style.fontSize = "18px";
+    overlay.style.zIndex = "9999";
+    overlay.innerHTML = "正在重启服务，请稍候...";
+    document.body.appendChild(overlay);
+    
+    setTimeout(() => {
+      window.location.reload();
+    }, 3000);
+  });
+}
+
+// 退出登录事件监听
+const logoutBtn = document.querySelector("#logoutBtn");
+if (logoutBtn) {
+  logoutBtn.addEventListener("click", async () => {
+    try {
+      await api("/api/logout", { method: "POST" });
+      localStorage.removeItem("token");
+      window.location.href = "/login";
+    } catch (err) {
+      console.error("Logout failed:", err);
+    }
+  });
+}
+

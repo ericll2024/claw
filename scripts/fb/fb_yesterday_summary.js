@@ -48,7 +48,11 @@ const DEFAULT_STATE_FILE = path.join(PROJECT_ROOT, 'state/facebook/fb_storage_st
 const DEFAULT_OUTPUT_DIR = path.join(PROJECT_ROOT, 'tmp/fb_yesterday_summary');
 const DEFAULT_CHROME = os.platform() === 'darwin'
   ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
-  : '/usr/bin/google-chrome-stable';
+  : (os.platform() === 'win32'
+      ? (fs.existsSync('C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe')
+          ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
+          : 'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe')
+      : '/usr/bin/google-chrome-stable');
 
 function parseArgs(argv) {
   const args = {
@@ -427,15 +431,18 @@ async function main() {
   }
 
   if (!isCDP) {
-    browser = await chromium.launch({
+    const launchOptions = {
       headless: !args.headed,
-      executablePath: args.chromePath,
       args: [
         '--disable-blink-features=AutomationControlled',
         '--no-first-run',
         '--disable-dev-shm-usage'
       ],
-    });
+    };
+    if (fs.existsSync(args.chromePath)) {
+      launchOptions.executablePath = args.chromePath;
+    }
+    browser = await chromium.launch(launchOptions);
     context = await browser.newContext(getContextOptions(args));
     page = await context.newPage();
   }

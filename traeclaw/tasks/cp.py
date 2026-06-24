@@ -130,17 +130,47 @@ def _fetch_summary(result: dict[str, Any]) -> str:
 
 def _settle_summary(result: dict[str, Any]) -> str:
     mode = result.get("mode")
-    if mode in {"settled", "already_settled"}:
-        draw = result.get("draw") or {}
-        issue = result.get("issue_code", "")
-        if draw:
-            reds = ",".join(f"{x:02d}" for x in draw.get("reds", []))
-            blue = draw.get("blue", "")
-            return f"第 {issue} 期复盘完成，开奖号码：红球 {reds}，蓝球 {int(blue):02d}"
+    if mode not in {"settled", "already_settled"}:
+        if mode == "waiting":
+            return f"第 {result.get('issue_code', '')} 期开奖数据尚未入库"
+        return f"复盘状态：{mode or 'unknown'}"
+
+    draw = result.get("draw") or {}
+    issue = result.get("issue_code", "")
+    if not draw:
         return f"第 {issue} 期复盘完成"
-    if mode == "waiting":
-        return f"第 {result.get('issue_code', '')} 期开奖数据尚未入库"
-    return f"复盘状态：{mode or 'unknown'}"
+
+    reds = ",".join(f"{x:02d}" for x in draw.get("reds", []))
+    blue_val = draw.get("blue")
+    blue = f"{int(blue_val):02d}" if blue_val is not None else ""
+
+    lines = [
+        f"第 {issue} 期复盘",
+        f"开奖号码：红球 {reds}｜蓝球 {blue}"
+    ]
+
+    label_map = {
+        'main': '主推 8+1',
+        'reference': '参考 9+1',
+        'budget_500': '500元方案',
+        'budget_1000': '1000元方案'
+    }
+
+    for plan in result.get('plans', []):
+        res = plan.get('result') or {}
+        summary = plan.get('summary') or {}
+        label = label_map.get(plan.get('plan_type'), plan.get('plan_type'))
+
+        sample_reds = summary.get('sample_reds') or ['']
+        sample = sample_reds[0] if sample_reds else ''
+        blues = summary.get('blues', '')
+        cost = res.get('total_cost', summary.get('cost', 0))
+        bonus = res.get('total_bonus', 0)
+
+        lines.append(f"\n{label}: 红球 {sample}，蓝球 {blues}，成本 {cost} 元")
+        lines.append(f"中獎金額：{bonus}元")
+
+    return "\n".join(lines)
 
 
 def main(argv: list[str] | None = None) -> int:

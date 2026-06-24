@@ -62,6 +62,14 @@ class TraeclawRequestHandler(BaseHTTPRequestHandler):
             return False
 
     def do_GET(self) -> None:
+        try:
+            self._handle_GET()
+        except Exception as exc:
+            import traceback
+            traceback.print_exc()
+            self.write_json({"error": f"服务器内部错误: {str(exc)}"}, status=500)
+
+    def _handle_GET(self) -> None:
         parsed = urlparse(self.path)
         path = parsed.path
 
@@ -152,6 +160,14 @@ class TraeclawRequestHandler(BaseHTTPRequestHandler):
         self.serve_static(path)
 
     def do_POST(self) -> None:
+        try:
+            self._handle_POST()
+        except Exception as exc:
+            import traceback
+            traceback.print_exc()
+            self.write_json({"error": f"服务器内部错误: {str(exc)}"}, status=500)
+
+    def _handle_POST(self) -> None:
         path = urlparse(self.path).path
 
         if path == "/api/login":
@@ -193,6 +209,22 @@ class TraeclawRequestHandler(BaseHTTPRequestHandler):
         # Check authentication for other POST paths
         if not self.is_authenticated():
             self.write_json({"error": "Unauthorized"}, status=401)
+            return
+
+        if path == "/api/restart":
+            import sys
+            import subprocess
+            import os
+            self.write_json({"ok": True, "message": "正在重启服务..."})
+            cmd = [
+                sys.executable,
+                "-c",
+                "import time, subprocess, sys; time.sleep(1.5); subprocess.Popen(sys.argv[1:])",
+                sys.executable
+            ] + sys.argv
+            subprocess.Popen(cmd, cwd=str(self.app.project_root))
+            import signal
+            os.kill(os.getpid(), signal.SIGTERM)
             return
 
         if path == "/api/logout":

@@ -65,7 +65,8 @@ class TaskRunner:
                 cwd=self.project_root,
                 env=self._env(),
                 capture_output=True,
-                text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=task.timeout_seconds,
                 check=False,
             )
@@ -154,6 +155,8 @@ class TaskRunner:
         env["PYTHONPATH"] = str(code_dir) if not existing else f"{code_dir}{os.pathsep}{existing}"
         env["TRAECLAW_DB_PATH"] = str(self.db.path)
         env["TRAECLAW_PROJECT_ROOT"] = str(self.project_root)
+        env["PYTHONUTF8"] = "1"
+        env["PYTHONIOENCODING"] = "utf-8"
         return env
 
     def _notify_if_configured(self, task: TaskDefinition, status: str, summary: str) -> tuple[str, str]:
@@ -180,9 +183,9 @@ def summarize_output(stdout: str, stderr: str, status: str) -> str:
     parsed = _parse_json(stdout)
     if isinstance(parsed, dict):
         if parsed.get("summary_text"):
-            return str(parsed["summary_text"])[:500]
+            return str(parsed["summary_text"])[:4000]
         if parsed.get("message"):
-            return str(parsed["message"])[:500]
+            return str(parsed["message"])[:4000]
         
         # Lottery fetch task (dlt_fetch)
         if "inserted" in parsed and "db_total" in parsed:
@@ -191,7 +194,7 @@ def summarize_output(stdout: str, stderr: str, status: str) -> str:
             db_total = parsed.get("db_total", 0)
             latest = parsed.get("latest") or []
             latest_line = f"。最新一期: {latest[0]}" if latest else ""
-            return f"拉取完成，新增 {inserted} 条，更新 {updated} 条，共 {db_total} 条{latest_line}"[:500]
+            return f"拉取完成，新增 {inserted} 条，更新 {updated} 条，共 {db_total} 条{latest_line}"[:4000]
             
         # Lottery recommendation task (dlt_recommend)
         if "recommendations" in parsed:
@@ -215,7 +218,7 @@ def summarize_output(stdout: str, stderr: str, status: str) -> str:
             amount = parsed.get("fixed_prize_amount", 0)
             report = parsed.get("report_text", "")
             if report:
-                return report[:500]
+                return report[:4000]
             return f"第 {draw_num} 期复盘完成。最高奖项: {level}，固定奖金: {amount} 元"
             
         # Lottery store plan task (dlt_store_plan)
@@ -227,14 +230,14 @@ def summarize_output(stdout: str, stderr: str, status: str) -> str:
 
         # General dict fallback: compact JSON
         try:
-            return json.dumps(parsed, ensure_ascii=False)[:500]
+            return json.dumps(parsed, ensure_ascii=False)[:4000]
         except Exception:
             pass
 
     for text in (stdout, stderr):
         lines = [line.strip() for line in text.splitlines() if line.strip()]
         if lines:
-            return lines[-1][:500]
+            return lines[-1][:4000]
     return "运行成功" if status == "success" else "运行失败"
 
 
@@ -306,6 +309,16 @@ def adjust_command(cmd: list[str], project_root: str | Path) -> list[str]:
     import sys
     if cmd[0] == "python3" and sys.platform == "win32":
         cmd[0] = sys.executable or "python"
+
+    if cmd[0] == "bash" and sys.platform == "win32":
+        if len(cmd) >= 2 and "fb_yesterday_summary.sh" in cmd[1]:
+            js_path = str(Path(cmd[1]).with_suffix(".js"))
+            state_file = str(Path("state/facebook/fb_storage_state.json"))
+            output_dir = str(Path("tmp/fb_yesterday_summary"))
+            config_file = str(Path("state/facebook/fb_groups.json"))
+            new_cmd = ["node", js_path, "--state-file", state_file, "--output-dir", output_dir, "--config", config_file]
+            new_cmd.extend(cmd[2:])
+            return new_cmd
 
     first = cmd[0].lower()
     is_python = (
