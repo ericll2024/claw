@@ -37,6 +37,14 @@ TASK_FILE_MAP = {
 }
 
 
+def _output_text(value: str | bytes | None) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return value
+
+
 class TaskRunner:
     def __init__(self, db: AppDatabase, project_root: str | Path):
         self.db = db
@@ -75,8 +83,8 @@ class TaskRunner:
             exit_code = completed.returncode
             status = "success" if completed.returncode == 0 else "failed"
         except subprocess.TimeoutExpired as exc:
-            stdout = exc.stdout or ""
-            stderr = (exc.stderr or "") + f"\nTask timed out after {task.timeout_seconds}s"
+            stdout = _output_text(exc.stdout)
+            stderr = _output_text(exc.stderr) + f"\nTask timed out after {task.timeout_seconds}s"
             exit_code = None
             status = "failed"
         except Exception as exc:

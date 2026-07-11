@@ -1,4 +1,5 @@
 import json
+import subprocess
 
 from traeclaw.db import AppDatabase
 from traeclaw.runner import TaskRunner
@@ -44,6 +45,39 @@ def test_runner_records_failed_command(tmp_path):
     latest = db.get_latest_run("test.fail")
     assert latest["exit_code"] == 7
     assert "bad" in latest["stderr"]
+
+
+def test_runner_records_timeout_when_captured_output_is_bytes(tmp_path, monkeypatch):
+    db = AppDatabase(tmp_path / "app.sqlite3")
+    db.initialize()
+    task = TaskDefinition(
+        id="test.timeout",
+        name="Timeout",
+        group="test",
+        description="",
+        schedule_label="手动触发",
+        command=["python3", "-c", "print('never reached')"],
+        timeout_seconds=1,
+    )
+
+    def raise_timeout(*args, **kwargs):
+        raise subprocess.TimeoutExpired(
+            args[0],
+            1,
+            output="部分输出".encode("utf-8"),
+            stderr="超时前错误".encode("utf-8"),
+        )
+
+    monkeypatch.setattr("traeclaw.runner.subprocess.run", raise_timeout)
+
+    result = TaskRunner(db, project_root=tmp_path).run(task, trigger_type="manual")
+
+    assert result["status"] == "failed"
+    latest = db.get_latest_run(task.id)
+    assert latest["status"] == "failed"
+    assert latest["stdout"] == "部分输出"
+    assert "超时前错误" in latest["stderr"]
+    assert "Task timed out after 1s" in latest["stderr"]
 
 
 def test_telegram_config_saved_from_web_form(tmp_path):
@@ -288,6 +322,5 @@ def test_mfood_maskphone_monitor_only_alert_on_threshold(tmp_path, monkeypatch):
     assert result["status"] == "failed"
     assert result["notify_status"] == "skipped"
     mock_send.assert_not_called()
-
 
 
