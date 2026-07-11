@@ -942,6 +942,8 @@ def target_combo_bonus(combo, target_profile):
 
 
 def build_strategy(history, strategy_version):
+    if strategy_version == 'cp-v5.4':
+        return pick_reds_v3(history, single_blue=True, candidate_mode='v5.2')
     if strategy_version == 'cp-v5.3':
         return pick_reds_v3(history, single_blue=True, candidate_mode='v5.2')
     if strategy_version == 'cp-v5.2':

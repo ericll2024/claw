@@ -19,7 +19,7 @@ from backtest_ssq import DB_PATH, PRIZE_MAP, build_strategy, ensure_tables, load
 _current_dir = Path(__file__).resolve().parent
 ROOT = _current_dir.parents[1]
 PRED_LOG = ROOT / 'state' / 'cp' / 'predictions.jsonl'
-STRATEGY_VERSION = 'cp-v5.3'
+STRATEGY_VERSION = 'cp-v5.4'
 
 CREATE_SQL = '''
 CREATE TABLE IF NOT EXISTS cp_prediction_plans (
@@ -171,17 +171,24 @@ def build_logic_text(reason: Dict) -> str:
     )
 
 
-def expand_reds(base_reds: List[int], candidate_pool: List[int], target_count: int) -> List[int]:
-    pool = list(dict.fromkeys(sorted(candidate_pool)))
-    extras = [n for n in pool if n not in base_reds]
-    reds = sorted(base_reds)
-    need = max(0, target_count - len(reds))
-    if need:
-        reds.extend(extras[:need])
-    if len(reds) < target_count:
-        fallback = [n for n in range(1, 34) if n not in reds]
-        reds.extend(fallback[:target_count - len(reds)])
+def _expand_reds(base_reds: List[int], candidate_pool: List[int], target_count: int) -> List[int]:
+    ranked_pool = list(dict.fromkeys(candidate_pool))
+    reds = list(dict.fromkeys(base_reds))
+    for number in ranked_pool:
+        if number not in reds and len(reds) < target_count:
+            reds.append(number)
+    for number in range(1, 34):
+        if number not in reds and len(reds) < target_count:
+            reds.append(number)
     return sorted(reds[:target_count])
+
+
+def expand_reds_legacy(base_reds: List[int], candidate_pool: List[int], target_count: int) -> List[int]:
+    return _expand_reds(base_reds, sorted(candidate_pool), target_count)
+
+
+def expand_reds(base_reds: List[int], candidate_pool: List[int], target_count: int) -> List[int]:
+    return _expand_reds(base_reds, candidate_pool, target_count)
 
 
 def build_single_ticket_plan(plan_type: str, label: str, red_count: int, blue: List[int], base_reds: List[int], candidate_pool: List[int], logic: str, blue_rank: List[int]) -> Dict:
