@@ -119,3 +119,19 @@ def test_connect_readonly_opens_wal_snapshot_without_sidecars(tmp_path):
 
     assert not Path(f"{db_file}-wal").exists()
     assert not Path(f"{db_file}-shm").exists()
+
+
+def test_connect_readonly_reads_committed_data_from_active_wal(tmp_path):
+    db_file = tmp_path / "active-wal.sqlite3"
+    writer = sqlite3.connect(db_file)
+    try:
+        assert writer.execute("PRAGMA journal_mode = WAL").fetchone()[0] == "wal"
+        writer.execute("CREATE TABLE sample (value INTEGER NOT NULL)")
+        writer.execute("INSERT INTO sample VALUES (9)")
+        writer.commit()
+        assert Path(f"{db_file}-wal").exists()
+
+        with connect_readonly(db_file) as reader:
+            assert reader.execute("SELECT value FROM sample").fetchone() == (9,)
+    finally:
+        writer.close()

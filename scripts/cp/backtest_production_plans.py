@@ -139,9 +139,23 @@ def compare_expansions(
 
 def connect_readonly(db_path):
     resolved = Path(db_path).expanduser().resolve()
-    uri = f"file:{quote(str(resolved))}?mode=ro&immutable=1"
+    base_uri = f"file:{quote(str(resolved))}?mode=ro"
+    try:
+        return _open_readonly_uri(base_uri)
+    except sqlite3.OperationalError as exc:
+        if "unable to open database file" not in str(exc).lower():
+            raise
+    return _open_readonly_uri(f"{base_uri}&immutable=1")
+
+
+def _open_readonly_uri(uri):
     connection = sqlite3.connect(uri, uri=True)
-    connection.execute("PRAGMA query_only = ON")
+    try:
+        connection.execute("PRAGMA query_only = ON")
+        connection.execute("SELECT name FROM sqlite_master LIMIT 1").fetchone()
+    except Exception:
+        connection.close()
+        raise
     return connection
 
 
