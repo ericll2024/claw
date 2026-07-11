@@ -5,7 +5,7 @@ import itertools
 import math
 import sqlite3
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, List, Tuple
 import sys
@@ -110,9 +110,15 @@ def parse_nums(text: str) -> List[int]:
     return [int(x) for x in text.split(',') if x]
 
 
-def infer_next_issue(last_issue: str) -> str:
+def infer_next_issue(last_issue: str, last_draw_date: str | None = None) -> str:
     year = int(last_issue[:4])
     seq = int(last_issue[-3:]) + 1
+    if last_draw_date:
+        next_draw_date = date.fromisoformat(last_draw_date) + timedelta(days=1)
+        while next_draw_date.weekday() not in {1, 3, 6}:
+            next_draw_date += timedelta(days=1)
+        if next_draw_date.year != year:
+            return f'{next_draw_date.year}001'
     if seq > 200:
         year += 1
         seq = 1
@@ -152,8 +158,9 @@ def single_ticket_return(reds: List[int], blues: List[int], draw: Dict) -> Tuple
         for blue in blues:
             hit_b = blue == draw['blue']
             prize_level, amount = PRIZE_MAP.get((hit_r, hit_b), ('未中奖', 0))
-            if amount > 0:
+            if prize_level != '未中奖':
                 prize_counter[prize_level] += 1
+            if amount > 0:
                 total_return += amount
     if prize_counter:
         prize_level = ' + '.join(f'{name}x{count}' for name, count in prize_counter.items())
@@ -335,7 +342,7 @@ def create_predictions(conn: sqlite3.Connection, force: bool = False) -> Dict:
     if len(draws) < 30:
         raise SystemExit('数据不足，无法生成预测')
     latest = draws[-1]
-    issue_code = infer_next_issue(latest['issue_code'])
+    issue_code = infer_next_issue(latest['issue_code'], latest.get('draw_date'))
     existing = load_plan_bundle(conn, issue_code)
     if existing and not force:
         return {'mode': 'existing', 'issue_code': issue_code, 'plans': existing}
@@ -448,7 +455,7 @@ def settle_issue(conn: sqlite3.Connection, issue_code: str) -> Dict:
                 ),
             )
             total_bonus += return_amount
-            if return_amount > 0:
+            if breakdown:
                 winning_tickets += 1
             if (hit_red, int(hit_blue)) > best_score:
                 best_score = (hit_red, int(hit_blue))
@@ -470,7 +477,7 @@ def settle_issue(conn: sqlite3.Connection, issue_code: str) -> Dict:
         max_hit_red = max(hit_red_values) if hit_red_values else 0
         logic_text = (plan.get('reason') or {}).get('logic', '')
         if winning_tickets:
-            miss_reason = '本期已有回报，但最高命中层级未顶到冲二等区，说明覆盖有用、核心骨架仍未咬中最关键那一层。'
+            miss_reason = '本期已有中奖，但最高命中层级仍需结合浮动奖金额确认，说明覆盖有效。'
         elif max_hit_red >= 4 or hit_blue_count > 0:
             miss_reason = '号码方向未完全走偏，但红球关键第5、第6位未补齐，蓝球防守亦未转成有效奖金。'
         else:
