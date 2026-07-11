@@ -14,31 +14,40 @@ from typing import Any
 def project_root() -> Path:
     if os.environ.get("TRAECLAW_PROJECT_ROOT"):
         return Path(os.environ["TRAECLAW_PROJECT_ROOT"]).resolve()
-    return Path(__file__).resolve().parents[3]
+    for candidate in Path(__file__).resolve().parents:
+        if (candidate / "traeclaw").is_dir() and (candidate / "scripts" / "cp").is_dir():
+            return candidate
+    return Path(__file__).resolve().parents[2]
+
+
+def layout_root() -> Path:
+    root = project_root()
+    if (root / "scripts" / "cp").is_dir():
+        return root
+    nested = root / "code"
+    if (nested / "scripts" / "cp").is_dir():
+        return nested
+    return root
+
+
+def scripts_dir() -> Path:
+    return layout_root() / "scripts" / "cp"
 
 
 def db_path() -> Path:
     if os.environ.get("TRAECLAW_DB_PATH"):
         return Path(os.environ["TRAECLAW_DB_PATH"]).resolve()
-    root = project_root()
-    if (root / "code" / "data" / "traeclaw.sqlite3").exists():
-        return root / "code" / "data" / "traeclaw.sqlite3"
-    return root / "data" / "traeclaw.sqlite3"
+    return layout_root() / "data" / "traeclaw.sqlite3"
 
 
 def _load_cp_core():
-    root = project_root()
-    if (root / "code" / "scripts" / "cp").is_dir():
-        scripts_dir = root / "code" / "scripts" / "cp"
-    else:
-        scripts_dir = root / "scripts" / "cp"
-        
-    if str(scripts_dir) not in sys.path:
-        sys.path.insert(0, str(scripts_dir))
+    cp_scripts = scripts_dir()
+    if str(cp_scripts) not in sys.path:
+        sys.path.insert(0, str(cp_scripts))
     import backtest_ssq  # type: ignore
 
     backtest_ssq.DB_PATH = str(db_path())
-    module_path = scripts_dir / "cp_prediction_core.py"
+    module_path = cp_scripts / "cp_prediction_core.py"
     module = types.ModuleType("cp_prediction_core")
     module.__file__ = str(module_path)
     sys.modules["cp_prediction_core"] = module
@@ -59,24 +68,46 @@ def predict(force: bool = False) -> dict[str, Any]:
 
 
 def fetch_latest() -> dict[str, Any]:
-    script = project_root() / "scripts" / "cp" / "fetch_ssq.py"
-    completed = subprocess.run(
-        [
-            sys.executable,
-            str(script),
-            "--db",
-            str(db_path()),
-            "--mode",
-            "latest",
-            "--latest-pages",
-            "1",
-        ],
-        cwd=project_root(),
-        capture_output=True,
-        text=True,
-        timeout=180,
-        check=False,
-    )
+    script = scripts_dir() / "fetch_ssq.py"
+    command = [
+        sys.executable,
+        str(script),
+        "--db",
+        str(db_path()),
+        "--mode",
+        "latest",
+        "--latest-pages",
+        "1",
+    ]
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=layout_root(),
+            capture_output=True,
+            text=True,
+            timeout=180,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        stdout = _output_text(exc.stdout)
+        stderr = _output_text(exc.stderr)
+        return {
+            "mode": "fetch_failed",
+            "returncode": None,
+            "error_type": "timeout",
+            "stdout": stdout,
+            "stderr": stderr,
+            "summary_text": "CP 开奖数据拉取超时（180 秒），本地数据库保持不变",
+        }
+    except OSError as exc:
+        return {
+            "mode": "fetch_failed",
+            "returncode": None,
+            "error_type": "os_error",
+            "stdout": "",
+            "stderr": str(exc),
+            "summary_text": "CP 开奖数据拉取进程启动失败，本地数据库保持不变",
+        }
     if completed.returncode != 0:
         return {
             "mode": "fetch_failed",
@@ -91,6 +122,14 @@ def fetch_latest() -> dict[str, Any]:
         result = {"mode": "fetch_output", "stdout": completed.stdout}
     result["summary_text"] = _fetch_summary(result)
     return result
+
+
+def _output_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return str(value)
 
 
 def check_result() -> dict[str, Any]:
