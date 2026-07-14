@@ -10,8 +10,10 @@ if str(CP_DIR) not in sys.path:
     sys.path.insert(0, str(CP_DIR))
 
 from backtest_production_plans import (  # noqa: E402
+    choose_red_coverage_recommendation,
     compare_expansions,
     connect_readonly,
+    evaluate_red_coverage,
     evaluate_plan,
 )
 
@@ -99,6 +101,38 @@ def test_comparison_reports_the_four_unchanged_purchase_tiers():
             for plan_type, metrics in result["modes"][mode].items()
         } == expected
         assert all(metrics["samples"] == 1 for metrics in result["modes"][mode].values())
+
+
+def test_red_coverage_evaluation_keeps_holdout_draws_out_of_each_prediction():
+    seen = []
+
+    def ranker(history):
+        seen.append([draw["issue_code"] for draw in history])
+        return list(range(1, 34))
+
+    result = evaluate_red_coverage(
+        sample_draws(40),
+        development_window=5,
+        holdout_window=3,
+        candidate_ranker=ranker,
+    )
+
+    assert result["holdout"]["samples"] == 3
+    assert seen[-3:] == [
+        [f"2026{index:03d}" for index in range(1, 38)],
+        [f"2026{index:03d}" for index in range(1, 39)],
+        [f"2026{index:03d}" for index in range(1, 40)],
+    ]
+
+
+def test_red_coverage_gate_requires_beating_both_comparators():
+    holdout_modes = {
+        "candidate": {"main": {"mean_red_hits": 2.0, "red5_plus_rate": 0.03}},
+        "current": {"main": {"mean_red_hits": 1.9, "red5_plus_rate": 0.04}},
+        "random": {"main": {"mean_red_hits": 1.8, "red5_plus_rate": 0.02}},
+    }
+
+    assert choose_red_coverage_recommendation(holdout_modes) == "no_evidence"
 
 
 def test_connect_readonly_opens_wal_snapshot_without_sidecars(tmp_path):

@@ -671,6 +671,10 @@ function renderScheduleEditor(task) {
         <button type="button" class="button add-time-btn" data-add-time>+ 添加时间</button>
       </div>
       <div style="border-top: 1px solid var(--line); padding-top: 12px; margin-top: 4px;">
+        <label style="display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px;">
+          <span>失败后重试次数</span>
+          <input data-schedule-retry-count type="number" min="0" max="10" step="1" required value="${escapeHtml(String(schedule.retry_count ?? 2))}" />
+        </label>
         <strong style="font-size: 13px; color: var(--text); display: block; margin-bottom: 8px;">通知配置 (Telegram)</strong>
         <div style="display: flex; flex-direction: column; gap: 8px;">
           <label style="display: flex; flex-direction: column; gap: 4px; margin-bottom: 4px;">
@@ -1136,6 +1140,7 @@ function collectSchedulePayload(form) {
     times: Array.from(form.querySelectorAll("[data-schedule-time]")).map((input) => input.value.trim()).filter(Boolean),
     telegram_chat_id: form.querySelector("[data-schedule-telegram-chat-id]")?.value.trim() || "",
     only_alert_on_abnormal: form.querySelector("[data-schedule-only-alert]")?.checked || false,
+    retry_count: form.querySelector("[data-schedule-retry-count]")?.value.trim() || "",
   };
 }
 
@@ -1598,4 +1603,3 @@ if (logoutBtn) {
     }
   });
 }
-

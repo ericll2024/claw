@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
+import threading
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -16,6 +17,24 @@ from .telegram import TelegramConfig, TelegramUpdateListener
 
 
 TZ = ZoneInfo("Asia/Shanghai")
+DEFAULT_RETRY_COUNT = 2
+MAX_RETRY_COUNT = 10
+
+
+def _normalize_retry_count(value: Any, default: int = DEFAULT_RETRY_COUNT) -> int:
+    if value is None or value == "":
+        return default
+    if isinstance(value, bool):
+        raise ValueError("失败后重试次数必须是 0 到 10 的整数")
+    if isinstance(value, int):
+        count = value
+    elif isinstance(value, str) and value.strip().isdigit():
+        count = int(value.strip())
+    else:
+        raise ValueError("失败后重试次数必须是 0 到 10 的整数")
+    if not 0 <= count <= MAX_RETRY_COUNT:
+        raise ValueError("失败后重试次数必须是 0 到 10 的整数")
+    return count
 
 
 class TraeclawApp:
@@ -34,6 +53,8 @@ class TraeclawApp:
         self.db = db
         self.import_legacy_state = import_legacy_state
         self.runner = TaskRunner(self.db, self.project_root)
+        self._running_task_ids: set[str] = set()
+        self._running_tasks_lock = threading.Lock()
         self.telegram_listener = TelegramUpdateListener(self.db)
         self.ai_dispatcher = TelegramAiDispatcher(self)
 
@@ -377,15 +398,29 @@ class TraeclawApp:
         schedule_data["notification_template"] = self.db.get_setting(f"task.{task_def.id}.notification_template", "")
         schedule_data["name"] = self.db.get_setting(f"task.{task_def.id}.name", "").strip()
         schedule_data["note"] = self.db.get_setting(f"task.{task_def.id}.note", "").strip()
+        schedule_data["retry_count"] = self.get_task_retry_count(task_def)
         return schedule_data
+
+    def get_task_retry_count(self, task: TaskDefinition | str) -> int:
+        task_def = get_task(task) if isinstance(task, str) else task
+        raw = self.db.get_setting(f"task.{task_def.id}.retry_count", "")
+        try:
+            return _normalize_retry_count(raw)
+        except ValueError:
+            return DEFAULT_RETRY_COUNT
 
     def save_task_schedule(self, task_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         task = get_task(task_id)
+        retry_count = _normalize_retry_count(
+            payload.get("retry_count"),
+            default=self.get_task_retry_count(task),
+        )
         self.db.set_setting(f"task.{task.id}.schedule", dumps_schedule(payload, task))
         self.db.set_setting(f"task.{task.id}.telegram_chat_id", str(payload.get("telegram_chat_id") or "").strip())
         self.db.set_setting(f"task.{task.id}.notification_template", str(payload.get("notification_template") or ""))
         self.db.set_setting(f"task.{task.id}.name", str(payload.get("name") or "").strip())
         self.db.set_setting(f"task.{task.id}.note", str(payload.get("note") or "").strip())
+        self.db.set_setting(f"task.{task.id}.retry_count", str(retry_count))
         return self.get_task_schedule(task)
 
     def get_agent_alias(self, agent_id: str) -> str:
@@ -550,7 +585,27 @@ class TraeclawApp:
 
     def run_task(self, task_id: str, trigger_type: str = "manual", send_to_telegram: bool = False) -> dict[str, Any]:
         task = get_task(task_id)
-        return self.runner.run(task, trigger_type=trigger_type, send_to_telegram=send_to_telegram)
+        with self._running_tasks_lock:
+            if task.id in self._running_task_ids:
+                return {
+                    "task_id": task.id,
+                    "status": "failed",
+                    "exit_code": None,
+                    "summary": "任务正在运行",
+                    "notify_status": "",
+                    "notify_error": "",
+                }
+            self._running_task_ids.add(task.id)
+        try:
+            return self.runner.run(
+                task,
+                trigger_type=trigger_type,
+                send_to_telegram=send_to_telegram,
+                retry_count=self.get_task_retry_count(task),
+            )
+        finally:
+            with self._running_tasks_lock:
+                self._running_task_ids.discard(task.id)
 
     def resolve_task_for_chat_id(self, chat_id: str) -> TaskDefinition:
         clean_chat_id = str(chat_id or "").strip()

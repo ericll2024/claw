@@ -47,6 +47,51 @@ def test_runner_records_failed_command(tmp_path):
     assert "bad" in latest["stderr"]
 
 
+def test_runner_retries_until_a_command_succeeds(tmp_path):
+    db = AppDatabase(tmp_path / "app.sqlite3")
+    db.initialize()
+    task = TaskDefinition(
+        id="test.retry_success",
+        name="Retry",
+        group="test",
+        description="",
+        schedule_label="手动触发",
+        command=[
+            "python3",
+            "-c",
+            "from pathlib import Path; import sys; p=Path('attempt'); n=int(p.read_text())+1 if p.exists() else 1; p.write_text(str(n)); sys.exit(0 if n == 3 else 1)",
+        ],
+    )
+
+    result = TaskRunner(db, tmp_path).run(task, retry_count=2)
+
+    assert result["status"] == "success"
+    assert (tmp_path / "attempt").read_text() == "3"
+    assert "Attempt 1/3" in db.get_latest_run(task.id)["stderr"]
+
+
+def test_runner_stops_after_the_configured_retry_count(tmp_path):
+    db = AppDatabase(tmp_path / "app.sqlite3")
+    db.initialize()
+    task = TaskDefinition(
+        id="test.retry_exhausted",
+        name="Retry",
+        group="test",
+        description="",
+        schedule_label="手动触发",
+        command=[
+            "python3",
+            "-c",
+            "from pathlib import Path; import sys; p=Path('attempt'); n=int(p.read_text())+1 if p.exists() else 1; p.write_text(str(n)); sys.exit(9)",
+        ],
+    )
+
+    result = TaskRunner(db, tmp_path).run(task, retry_count=2)
+
+    assert result["status"] == "failed"
+    assert (tmp_path / "attempt").read_text() == "3"
+
+
 def test_runner_records_timeout_when_captured_output_is_bytes(tmp_path, monkeypatch):
     db = AppDatabase(tmp_path / "app.sqlite3")
     db.initialize()
@@ -322,5 +367,4 @@ def test_mfood_maskphone_monitor_only_alert_on_threshold(tmp_path, monkeypatch):
     assert result["status"] == "failed"
     assert result["notify_status"] == "skipped"
     mock_send.assert_not_called()
-
 

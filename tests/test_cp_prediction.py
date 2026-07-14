@@ -28,6 +28,19 @@ def test_expand_reds_uses_candidate_rank(cp_core):
     assert cp_core.expand_reds(base, pool, 8) == [2, 10, 20, 25, 29, 30, 31, 33]
 
 
+def test_red_coverage_rank_uses_only_prior_draws():
+    history = [
+        {"reds": [1, 2, 3, 4, 5, 6], "blue": 1, "red_sum": 21, "total_sum": 22},
+        {"reds": [1, 2, 7, 8, 9, 10], "blue": 2, "red_sum": 37, "total_sum": 39},
+    ]
+
+    rank = backtest_ssq.rank_reds_for_coverage(history)
+
+    assert rank[:2] == [1, 2]
+    assert len(rank) == 33
+    assert sorted(rank) == list(range(1, 34))
+
+
 def test_four_plans_keep_single_blue_shapes_and_costs(cp_core):
     strategy = {
         "reds": [2, 10, 20, 25, 30, 31, 33],
@@ -60,6 +73,21 @@ def test_four_plans_keep_single_blue_shapes_and_costs(cp_core):
 
 def test_production_strategy_version_is_v54(cp_core):
     assert cp_core.STRATEGY_VERSION == "cp-v5.4"
+
+
+def test_prediction_uses_current_strategy_without_qualifying_evaluation(cp_core):
+    with sqlite3.connect(":memory:") as connection:
+        cp_core.ensure_prediction_tables(connection)
+
+        assert cp_core.resolve_prediction_strategy_version(connection) == "cp-v5.4"
+
+
+def test_prediction_uses_candidate_only_after_qualifying_evaluation(cp_core):
+    with sqlite3.connect(":memory:") as connection:
+        cp_core.ensure_prediction_tables(connection)
+        cp_core.record_red_coverage_evaluation(connection, {"recommendation": "candidate"})
+
+        assert cp_core.resolve_prediction_strategy_version(connection) == "cp-v5.5-red-coverage"
 
 
 def test_v54_maps_to_single_blue_v52_base_selector(monkeypatch):

@@ -942,6 +942,8 @@ def target_combo_bonus(combo, target_profile):
 
 
 def build_strategy(history, strategy_version):
+    if strategy_version == 'cp-v5.5-red-coverage':
+        return pick_reds_for_coverage(history)
     if strategy_version == 'cp-v5.4':
         return pick_reds_v3(history, single_blue=True, candidate_mode='v5.2')
     if strategy_version == 'cp-v5.3':
@@ -963,6 +965,43 @@ def build_strategy(history, strategy_version):
     if strategy_version == 'cp-v2':
         return pick_reds_v2(history)
     return pick_reds_v1(history)
+
+
+def rank_reds_for_coverage(history):
+    """Rank red balls from prior draws without treating overdue numbers as due."""
+    if not history:
+        return list(range(1, 34))
+
+    last_draw = set(history[-1]['reds'])
+    scores = []
+    for number in range(1, 34):
+        weighted_frequency = sum(
+            (0.97 ** age)
+            for age, draw in enumerate(reversed(history))
+            if number in draw['reds']
+        )
+        omission = 0
+        for draw in reversed(history):
+            if number in draw['reds']:
+                break
+            omission += 1
+        bounded_omission = min(max(omission - 2, 0), 6) * 0.04
+        recurrence_penalty = 0.03 if number in last_draw else 0.0
+        scores.append((weighted_frequency + bounded_omission - recurrence_penalty, number))
+
+    return [number for _, number in sorted(scores, key=lambda item: (-item[0], item[1]))]
+
+
+def pick_reds_for_coverage(history):
+    strategy = pick_reds_v3(history, single_blue=True, candidate_mode='v5.2')
+    red_rank = rank_reds_for_coverage(history)
+    strategy['reds'] = sorted(red_rank[:7])
+    strategy['reason'] = {
+        **strategy['reason'],
+        'candidate_pool': red_rank,
+        'red_model': 'recency_coverage_v1',
+    }
+    return strategy
 
 
 def evaluate(strategy, draw):

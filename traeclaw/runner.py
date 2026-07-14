@@ -50,12 +50,21 @@ class TaskRunner:
         self.db = db
         self.project_root = Path(project_root)
 
-    def run(self, task: TaskDefinition, trigger_type: str = "manual", send_to_telegram: bool = False) -> dict[str, Any]:
+    def run(
+        self,
+        task: TaskDefinition,
+        trigger_type: str = "manual",
+        send_to_telegram: bool = False,
+        retry_count: int = 2,
+    ) -> dict[str, Any]:
         run_id = self.db.start_run(task.id, trigger_type)
         stdout = ""
         stderr = ""
         exit_code: int | None = None
         status = "failed"
+        retry_count = max(int(retry_count), 0)
+        max_attempts = retry_count + 1
+        attempt_count = 0
 
         # Write files from DB to filesystem
         files_to_sync = TASK_FILE_MAP.get(task.id, [])
@@ -68,28 +77,20 @@ class TaskRunner:
 
         try:
             cmd = adjust_command(list(task.command), self.project_root)
-            completed = subprocess.run(
-                cmd,
-                cwd=self.project_root,
-                env=self._env(),
-                capture_output=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=task.timeout_seconds,
-                check=False,
-            )
-            stdout = completed.stdout or ""
-            stderr = completed.stderr or ""
-            exit_code = completed.returncode
-            status = "success" if completed.returncode == 0 else "failed"
-        except subprocess.TimeoutExpired as exc:
-            stdout = _output_text(exc.stdout)
-            stderr = _output_text(exc.stderr) + f"\nTask timed out after {task.timeout_seconds}s"
-            exit_code = None
-            status = "failed"
-        except Exception as exc:
-            stderr = str(exc)
-            status = "failed"
+            failure_diagnostics: list[str] = []
+            for attempt_count in range(1, max_attempts + 1):
+                stdout, stderr, exit_code, status = self._run_command(cmd, task)
+                if status == "success":
+                    break
+                failure_diagnostics.append(
+                    f"Attempt {attempt_count}/{max_attempts} failed\n"
+                    f"stdout:\n{stdout}\n"
+                    f"stderr:\n{stderr}"
+                )
+            if failure_diagnostics:
+                if status == "success" and stderr:
+                    failure_diagnostics.append(f"Final attempt stderr:\n{stderr}")
+                stderr = "\n\n".join(failure_diagnostics)
         finally:
             # Sync files back to DB and delete from disk
             for rel_path in files_to_sync:
@@ -152,9 +153,36 @@ class TaskRunner:
             "status": status,
             "exit_code": exit_code,
             "summary": summary,
+            "attempt_count": attempt_count,
             "notify_status": notify_status,
             "notify_error": notify_error,
         }
+
+    def _run_command(self, cmd: list[str], task: TaskDefinition) -> tuple[str, str, int | None, str]:
+        try:
+            completed = subprocess.run(
+                cmd,
+                cwd=self.project_root,
+                env=self._env(),
+                capture_output=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=task.timeout_seconds,
+                check=False,
+            )
+            stdout = completed.stdout or ""
+            stderr = completed.stderr or ""
+            status = "success" if completed.returncode == 0 else "failed"
+            return stdout, stderr, completed.returncode, status
+        except subprocess.TimeoutExpired as exc:
+            return (
+                _output_text(exc.stdout),
+                _output_text(exc.stderr) + f"\nTask timed out after {task.timeout_seconds}s",
+                None,
+                "failed",
+            )
+        except Exception as exc:
+            return "", str(exc), None, "failed"
 
     def _env(self) -> dict[str, str]:
         env = os.environ.copy()

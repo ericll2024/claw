@@ -82,6 +82,15 @@ CREATE TABLE IF NOT EXISTS cp_prediction_ticket_results (
 );
 CREATE INDEX IF NOT EXISTS idx_cp_prediction_ticket_results_issue
   ON cp_prediction_ticket_results(issue_code DESC, plan_id);
+
+CREATE TABLE IF NOT EXISTS cp_red_coverage_evaluations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  recommendation TEXT NOT NULL,
+  evaluation_json TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_cp_red_coverage_evaluations_created
+  ON cp_red_coverage_evaluations(created_at DESC, id DESC);
 '''
 
 PLAN_TYPE_LABELS = {
@@ -128,6 +137,46 @@ def infer_next_issue(last_issue: str, last_draw_date: str | None = None) -> str:
 def ensure_prediction_tables(conn: sqlite3.Connection):
     ensure_tables(conn)
     conn.executescript(CREATE_SQL)
+
+
+def record_red_coverage_evaluation(conn: sqlite3.Connection, evaluation: Dict) -> None:
+    recommendation = str(evaluation.get('recommendation') or 'no_evidence')
+    if recommendation not in {'candidate', 'current', 'no_evidence'}:
+        raise ValueError('invalid red coverage recommendation')
+    conn.execute(
+        '''INSERT INTO cp_red_coverage_evaluations (recommendation, evaluation_json, created_at)
+           VALUES (?, ?, ?)''',
+        (recommendation, json.dumps(evaluation, ensure_ascii=False), now_iso()),
+    )
+    conn.commit()
+
+
+def resolve_prediction_strategy_version(conn: sqlite3.Connection) -> str:
+    ensure_prediction_tables(conn)
+    row = conn.execute(
+        '''SELECT recommendation FROM cp_red_coverage_evaluations
+           ORDER BY created_at DESC, id DESC LIMIT 1'''
+    ).fetchone()
+    if row and row[0] == 'candidate':
+        return 'cp-v5.5-red-coverage'
+    return STRATEGY_VERSION
+
+
+def evaluate_and_record_red_coverage(
+    conn: sqlite3.Connection,
+    development_window: int = 300,
+    holdout_window: int = 100,
+) -> Dict:
+    from backtest_production_plans import evaluate_red_coverage
+
+    ensure_prediction_tables(conn)
+    evaluation = evaluate_red_coverage(
+        load_draws(conn),
+        development_window=development_window,
+        holdout_window=holdout_window,
+    )
+    record_red_coverage_evaluation(conn, evaluation)
+    return evaluation
 
 
 def load_draw(conn: sqlite3.Connection, issue_code: str):
@@ -273,8 +322,8 @@ def summarize_plan(plan_type: str, tickets: List[Dict]) -> Dict:
     }
 
 
-def build_prediction_payloads(draws: List[Dict]) -> List[Dict]:
-    base_strategy = build_strategy(draws, STRATEGY_VERSION)
+def build_prediction_payloads(draws: List[Dict], strategy_version: str = STRATEGY_VERSION) -> List[Dict]:
+    base_strategy = build_strategy(draws, strategy_version)
     return generate_main_and_reference(base_strategy)
 
 
@@ -348,7 +397,8 @@ def create_predictions(conn: sqlite3.Connection, force: bool = False) -> Dict:
         return {'mode': 'existing', 'issue_code': issue_code, 'plans': existing}
     if existing and force:
         delete_prediction_issue(conn, issue_code)
-    payloads = build_prediction_payloads(draws)
+    strategy_version = resolve_prediction_strategy_version(conn)
+    payloads = build_prediction_payloads(draws, strategy_version)
     now = now_iso()
     inserted = []
     for payload in payloads:
@@ -361,7 +411,7 @@ def create_predictions(conn: sqlite3.Connection, force: bool = False) -> Dict:
                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'predicted', ?, ?)''',
             (
                 issue_code,
-                STRATEGY_VERSION,
+                strategy_version,
                 payload['plan_type'],
                 payload['bet_type'],
                 payload['budget'],

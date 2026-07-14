@@ -1,6 +1,9 @@
 import json
 import threading
+import urllib.error
 import urllib.request
+
+import pytest
 
 from traeclaw.app import TraeclawApp
 from traeclaw.db import AppDatabase
@@ -46,6 +49,7 @@ def test_tasks_api_returns_registered_tasks_and_latest_run(tmp_path):
     assert "cp.predict" in task_ids
     cp_task = next(task for task in payload["tasks"] if task["id"] == "cp.predict")
     assert cp_task["schedule_label"] == "每天 18:00"
+    assert cp_task["schedule"]["retry_count"] == 2
     assert "next_run_at" in cp_task
     assert cp_task["workflow_steps"]
     assert cp_task["work_path"] == "scripts/cp"
@@ -60,6 +64,16 @@ def test_index_page_shows_telegram_listener_status_slot(tmp_path):
 
     assert 'id="telegramListenerStatus"' in html
     assert "Telegram" in html
+
+
+def test_schedule_dialog_has_retry_count_control(tmp_path):
+    httpd, base_url = run_test_server(tmp_path)
+    try:
+        script = request_text(base_url, "/app.js")
+    finally:
+        httpd.shutdown()
+
+    assert 'data-schedule-retry-count' in script
 
 
 def test_tasks_api_groups_tasks_by_folder_agent(tmp_path):
@@ -120,6 +134,7 @@ def test_task_schedule_api_overrides_default_schedule(tmp_path):
                 "name": "Custom Task Name",
                 "note": "Custom Task Note",
                 "only_alert_on_abnormal": True,
+                "retry_count": 4,
             },
         )
         payload = request_json(base_url, "/api/tasks")
@@ -132,11 +147,70 @@ def test_task_schedule_api_overrides_default_schedule(tmp_path):
     assert saved["schedule"]["name"] == "Custom Task Name"
     assert saved["schedule"]["note"] == "Custom Task Note"
     assert saved["schedule"]["only_alert_on_abnormal"] is True
+    assert saved["schedule"]["retry_count"] == 4
     assert task["schedule"]["custom"] is True
     assert task["name"] == "Custom Task Name"
     assert task["note"] == "Custom Task Note"
     assert task["schedule"]["only_alert_on_abnormal"] is True
+    assert task["schedule"]["retry_count"] == 4
     assert task["schedule_label"] == "长期 · 周一、周三、周五 · 08:30、18:30"
+
+
+@pytest.mark.parametrize("retry_count", [-1, "two", 11])
+def test_task_schedule_api_rejects_invalid_retry_count(tmp_path, retry_count):
+    httpd, base_url = run_test_server(tmp_path)
+    try:
+        with pytest.raises(urllib.error.HTTPError) as error:
+            request_json(
+                base_url,
+                "/api/tasks/cp.predict/schedule",
+                method="POST",
+                payload={
+                    "mode": "long_term",
+                    "weekdays": list(range(7)),
+                    "times": ["18:00"],
+                    "retry_count": retry_count,
+                },
+            )
+    finally:
+        httpd.shutdown()
+
+    assert error.value.code == 400
+
+
+def test_app_rejects_a_second_concurrent_run_of_the_same_task(tmp_path, monkeypatch):
+    app = TraeclawApp(
+        project_root=tmp_path,
+        db=AppDatabase(tmp_path / "app.sqlite3"),
+        import_legacy_state=False,
+    )
+    app.initialize()
+    started = threading.Event()
+    release = threading.Event()
+
+    def slow_run(*args, **kwargs):
+        started.set()
+        release.wait(timeout=2)
+        return {"status": "success"}
+
+    monkeypatch.setattr(app.runner, "run", slow_run)
+    first = threading.Thread(target=app.run_task, args=("cp.predict",))
+    first.start()
+    assert started.wait(timeout=1)
+
+    second_result = {}
+    second = threading.Thread(
+        target=lambda: second_result.update(app.run_task("cp.predict")),
+    )
+    second.start()
+    second.join(timeout=0.2)
+    release.set()
+    first.join(timeout=1)
+    second.join(timeout=1)
+
+    assert not second.is_alive()
+    assert second_result["status"] == "failed"
+    assert second_result["summary"] == "任务正在运行"
 
 
 def test_task_group_runs_api_returns_recent_runs_with_limit(tmp_path):

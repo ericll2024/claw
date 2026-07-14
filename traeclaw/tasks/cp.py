@@ -67,6 +67,18 @@ def predict(force: bool = False) -> dict[str, Any]:
     return result
 
 
+def evaluate_red_coverage() -> dict[str, Any]:
+    core = _load_cp_core()
+    with sqlite3.connect(db_path()) as conn:
+        result = core.evaluate_and_record_red_coverage(conn)
+    holdout = result.get("holdout") or {}
+    result["summary_text"] = (
+        f"红球覆盖评估完成：留出期 {holdout.get('samples', 0)} 期，"
+        f"建议 {result.get('recommendation', 'no_evidence')}"
+    )
+    return result
+
+
 def fetch_latest() -> dict[str, Any]:
     script = scripts_dir() / "fetch_ssq.py"
     command = [
@@ -217,12 +229,15 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     predict_parser = sub.add_parser("predict")
     predict_parser.add_argument("--force", action="store_true")
+    sub.add_parser("evaluate-red-coverage")
     sub.add_parser("fetch-latest")
     sub.add_parser("check-result")
     args = parser.parse_args(argv)
 
     if args.command == "predict":
         result = predict(force=args.force)
+    elif args.command == "evaluate-red-coverage":
+        result = evaluate_red_coverage()
     elif args.command == "fetch-latest":
         result = fetch_latest()
     else:
