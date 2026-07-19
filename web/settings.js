@@ -114,6 +114,11 @@ async function loadMFood() {
     mfoodTokenInfo.style.display = "none";
     mfoodCurrentToken.textContent = "";
   }
+
+  const lastCheckTimeEl = document.querySelector("#mfoodLastCheckTime");
+  if (lastCheckTimeEl) {
+    lastCheckTimeEl.textContent = settings.login?.last_check_time || "无";
+  }
 }
 
 
@@ -270,6 +275,7 @@ checkMFoodTokenBtn.addEventListener("click", async () => {
     showError(err);
   } finally {
     checkMFoodTokenBtn.disabled = false;
+    await loadMFood();
   }
 });
 
@@ -586,7 +592,76 @@ listenerModal.addEventListener("click", async (event) => {
   }
 });
 
-Promise.all([loadTelegram(), loadAiSettings(), loadMFood()]).catch(showError);
+// Facebook Settings Logic
+const facebookForm = document.querySelector("#facebookForm");
+const facebookState = document.querySelector("#facebookState");
+const facebookGroupsContainer = document.querySelector("#facebookGroupsContainer");
+const newFacebookGroupUrl = document.querySelector("#newFacebookGroupUrl");
+const addFacebookGroupBtn = document.querySelector("#addFacebookGroupBtn");
+
+let facebookGroups = [];
+
+function renderFacebookGroups() {
+  if (facebookGroups.length === 0) {
+    facebookGroupsContainer.innerHTML = '<div class="empty" style="color: var(--muted); font-size: 13px;">未配置监控群组</div>';
+    return;
+  }
+  
+  facebookGroupsContainer.innerHTML = facebookGroups.map((url, index) => {
+    return `
+      <div style="display: flex; gap: 8px; align-items: center;">
+        <input type="text" value="${escapeHtml(url)}" class="facebook-group-input" style="flex: 1;" readonly />
+        <button class="button secondary delete-fb-group-btn" data-index="${index}" type="button" style="padding: 4px 10px; border-color: var(--red); color: var(--red);">删除</button>
+      </div>
+    `;
+  }).join('');
+  
+  document.querySelectorAll(".delete-fb-group-btn").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      const index = parseInt(e.target.dataset.index, 10);
+      facebookGroups.splice(index, 1);
+      renderFacebookGroups();
+    });
+  });
+}
+
+async function loadFacebookSettings() {
+  const payload = await api("/api/settings/facebook");
+  facebookGroups = payload.settings?.groups || [];
+  facebookState.textContent = payload.settings?.configured ? "已配置" : "未配置";
+  facebookState.className = payload.settings?.configured ? "badge success" : "badge";
+  renderFacebookGroups();
+}
+
+addFacebookGroupBtn.addEventListener("click", () => {
+  const url = newFacebookGroupUrl.value.trim();
+  if (!url) return;
+  if (!url.startsWith("http://") && !url.startsWith("https://")) {
+    showToast("请输入合法的 URL 链接", "error");
+    return;
+  }
+  facebookGroups.push(url);
+  newFacebookGroupUrl.value = "";
+  renderFacebookGroups();
+});
+
+facebookForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  api("/api/settings/facebook", {
+    method: "POST",
+    body: JSON.stringify({
+      groups: facebookGroups
+    })
+  })
+    .then(() => {
+      showToast("Facebook 配置保存成功", "success");
+      return loadFacebookSettings();
+    })
+    .catch(showError);
+});
+
+Promise.all([loadTelegram(), loadAiSettings(), loadMFood(), loadFacebookSettings()]).catch(showError);
+
 
 const logoutBtn = document.querySelector("#logoutBtn");
 if (logoutBtn) {

@@ -157,6 +157,10 @@ class TraeclawRequestHandler(BaseHTTPRequestHandler):
         if path == "/api/settings/mfood":
             self.write_json({"settings": self.app.get_mfood_settings()})
             return
+        if path == "/api/settings/facebook":
+            self.write_json({"settings": self.app.get_facebook_settings()})
+            return
+
         self.serve_static(path)
 
     def do_POST(self) -> None:
@@ -337,6 +341,12 @@ class TraeclawRequestHandler(BaseHTTPRequestHandler):
             settings = self.app.save_mfood_settings(payload)
             self.write_json({"settings": settings})
             return
+        if path == "/api/settings/facebook":
+            payload = self.read_json()
+            settings = self.app.save_facebook_settings(payload)
+            self.write_json({"settings": settings})
+            return
+
         if path == "/api/settings/mfood/check":
             res = self.app.check_mfood_token()
             self.write_json(res)

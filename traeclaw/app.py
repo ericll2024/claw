@@ -425,51 +425,6 @@ class TraeclawApp:
 
 
 
-        elif task_id == "mfood.order_monitor":
-            account = (
-                os.environ.get("MFOOD_MANAGER_ACCOUNT") or 
-                os.environ.get("MFOOD_ACCOUNT") or
-                self.db.get_setting("mfood.login.account", "").strip() or
-                self.db.get_setting("mfood.order_monitor.manager_account", "").strip()
-            )
-            password = (
-                os.environ.get("MFOOD_MANAGER_PASSWORD_MD5") or 
-                os.environ.get("MFOOD_PASSWORD_MD5") or
-                self.db.get_setting("mfood.login.password_md5", "").strip() or
-                self.db.get_setting("mfood.order_monitor.manager_password_md5", "").strip()
-            )
-            api_key = (
-                os.environ.get("MFOOD_SENSORS_API_KEY") or
-                self.db.get_setting("mfood.shence.sensors_api_key", "").strip() or
-                self.db.get_setting("mfood.order_monitor.sensors_api_key", "").strip()
-            )
-            monitoring_dir_val = (
-                os.environ.get("MFOOD_MONITORING_DIR") or
-                self.db.get_setting("mfood.order_monitor.monitoring_dir", "").strip()
-            )
-            if not monitoring_dir_val:
-                monitoring_dir_val = "/Users/eric/Documents/project/code/sensorsdata_monitor/monitoring"
-                if not os.path.exists(monitoring_dir_val):
-                    monitoring_dir_val = "/Users/eric/Documents/project/mfood/神策數據/monitoring"
-            else:
-                if not os.path.exists(monitoring_dir_val):
-                    workspace_dir = "/Users/eric/Documents/project/code/sensorsdata_monitor/monitoring"
-                    if os.path.exists(workspace_dir):
-                        monitoring_dir_val = workspace_dir
-
-            if not account:
-                errors.append("管理账号未配置（需 mFood 登录账号）")
-            if not password:
-                errors.append("管理密码未配置（需 mFood 登录密码 MD5）")
-            if not api_key:
-                errors.append("神策 API Key 未配置")
-            
-            if monitoring_dir_val:
-                from pathlib import Path
-                path = Path(monitoring_dir_val).expanduser().resolve()
-                if not path.exists():
-                    errors.append(f"神策对账监控目录不存在：{path}")
-
         elif task_id in (
             "mfood.takeout_business_analysis",
             "mfood.market_business_analysis",
@@ -546,6 +501,16 @@ class TraeclawApp:
         self.db.delete_run(run_id)
 
     def task_due_key(self, task: TaskDefinition, now: datetime) -> str:
+        if task.id == "mfood.token_check":
+            last_check_str = self.db.get_setting("mfood.login.last_check_time", "")
+            if last_check_str:
+                try:
+                    last_check = datetime.strptime(last_check_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=TZ)
+                    interval = getattr(task, "interval_minutes", 5)
+                    if (now - last_check).total_seconds() < interval * 60:
+                        return ""
+                except Exception:
+                    pass
         return due_key(task, self.get_task_schedule(task), now)
 
     def run_task(self, task_id: str, trigger_type: str = "manual", send_to_telegram: bool = False) -> dict[str, Any]:
@@ -611,6 +576,7 @@ class TraeclawApp:
         token = self.db.get_setting("mfood.login.token", "")
         settings["login"]["token_configured"] = bool(token)
         settings["login"]["token"] = mask_secret(token) if token else ""
+        settings["login"]["last_check_time"] = self.db.get_setting("mfood.login.last_check_time", "")
         return settings
 
     def save_mfood_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -620,6 +586,7 @@ class TraeclawApp:
     def check_mfood_token(self) -> dict[str, Any]:
         from .mfood.login import MFoodLogin
         token = self.db.get_setting("mfood.login.token", "")
+        self.db.set_setting("mfood.login.last_check_time", datetime.now(TZ).strftime("%Y-%m-%d %H:%M:%S"))
         if not token:
             return {"ok": False, "status": "未配置 Token"}
         login_handler = MFoodLogin(self.db, self.project_root)
@@ -629,6 +596,7 @@ class TraeclawApp:
     def login_mfood(self) -> dict[str, Any]:
         from .mfood.login import MFoodLogin
         login_handler = MFoodLogin(self.db, self.project_root)
+        self.db.set_setting("mfood.login.last_check_time", datetime.now(TZ).strftime("%Y-%m-%d %H:%M:%S"))
         try:
             res = login_handler.get_token(force_refresh=True)
             return {"ok": True, "token": mask_secret(res.get("token", ""))}
@@ -646,6 +614,51 @@ class TraeclawApp:
         valid_tasks = {task.id for task in list_tasks() if task.group == agent_id}
         clean_order = [t for t in order if t in valid_tasks]
         self.db.set_setting(f"task.order.{agent_id}", ",".join(clean_order))
+
+    def get_facebook_settings(self) -> dict[str, Any]:
+        import json
+        content = self.db.get_setting("file:state/facebook/fb_groups.json", "")
+        if not content:
+            try:
+                disk_path = self.project_root / "state/facebook/fb_groups.json"
+                if disk_path.exists():
+                    content = disk_path.read_text(encoding="utf-8")
+            except Exception:
+                pass
+        
+        if content:
+            try:
+                data = json.loads(content)
+                groups = data.get("groups", [])
+            except Exception:
+                groups = []
+        else:
+            groups = [
+                "https://www.facebook.com/groups/273979355317477",
+                "https://www.facebook.com/groups/982872103263383/",
+                "https://www.facebook.com/groups/644345363776357"
+            ]
+        
+        return {
+            "groups": groups,
+            "configured": len(groups) > 0
+        }
+
+    def save_facebook_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
+        import json
+        groups = payload.get("groups", [])
+        content = json.dumps({"groups": groups}, indent=2)
+        self.db.set_setting("file:state/facebook/fb_groups.json", content)
+        
+        try:
+            disk_path = self.project_root / "state/facebook/fb_groups.json"
+            disk_path.parent.mkdir(parents=True, exist_ok=True)
+            disk_path.write_text(content, encoding="utf-8")
+        except Exception:
+            pass
+            
+        return self.get_facebook_settings()
+
 
 
 

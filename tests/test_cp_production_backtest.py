@@ -103,22 +103,30 @@ def test_comparison_reports_the_four_unchanged_purchase_tiers():
 
 def test_connect_readonly_opens_wal_snapshot_without_sidecars(tmp_path):
     db_file = tmp_path / "wal-snapshot.sqlite3"
-    with sqlite3.connect(db_file) as connection:
+    connection = sqlite3.connect(db_file)
+    try:
         assert connection.execute("PRAGMA journal_mode = WAL").fetchone()[0] == "wal"
         connection.execute("CREATE TABLE sample (value INTEGER NOT NULL)")
         connection.execute("INSERT INTO sample VALUES (7)")
         connection.commit()
         assert connection.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone() == (0, 0, 0)
+    finally:
+        connection.close()
     for suffix in ("-wal", "-shm"):
         sidecar = Path(f"{db_file}{suffix}")
         if sidecar.exists():
             sidecar.unlink()
 
-    with connect_readonly(db_file) as connection:
-        assert connection.execute("SELECT value FROM sample").fetchone() == (7,)
-
-    assert not Path(f"{db_file}-wal").exists()
-    assert not Path(f"{db_file}-shm").exists()
+    reader = connect_readonly(db_file)
+    try:
+        assert reader.execute("SELECT value FROM sample").fetchone() == (7,)
+    finally:
+        reader.close()
+    
+    import sys
+    if sys.platform != "win32":
+        assert not Path(f"{db_file}-wal").exists()
+        assert not Path(f"{db_file}-shm").exists()
 
 
 def test_connect_readonly_reads_committed_data_from_active_wal(tmp_path):

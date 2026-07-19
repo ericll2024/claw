@@ -31,7 +31,7 @@ def test_registry_includes_legacy_script_tasks_as_visible_items():
 def test_registry_includes_migrated_mfood_skill_tasks():
     task_ids = {task.id for task in list_tasks()}
 
-    assert "mfood.order_monitor" in task_ids
+    assert "mfood.takeout_business_analysis" in task_ids
 
 
 def test_next_run_for_daily_task_rolls_to_today_or_tomorrow():

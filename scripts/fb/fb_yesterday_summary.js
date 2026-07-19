@@ -380,14 +380,25 @@ async function extractPosts(page, targetDate, maxPosts) {
   return filtered;
 }
 
-async function waitForManualLogin(page) {
+async function waitForManualLogin(page, context) {
   console.log('請在打開的 Chrome 內完成 Facebook 登入。');
-  console.log('登入完成後，返回終端按 Enter 繼續。');
+  console.log('系统会自动检测登录成功状态，登录成功后窗口会自动关闭。');
   await page.goto('https://www.facebook.com/', { waitUntil: 'domcontentloaded' });
-  await new Promise((resolve) => {
-    process.stdin.resume();
-    process.stdin.once('data', () => resolve());
-  });
+  
+  while (true) {
+    try {
+      const cookies = await context.cookies();
+      const hasCUser = cookies.some(c => c.name === 'c_user');
+      if (hasCUser) {
+        console.log('检测到登录成功！正在保存会话...');
+        await page.waitForTimeout(2000); // Wait 2s for cookies to settle
+        break;
+      }
+    } catch (e) {
+      console.error('检测登录状态时出错:', e.message);
+    }
+    await page.waitForTimeout(1000);
+  }
 }
 
 function getContextOptions(args) {
@@ -453,7 +464,7 @@ async function main() {
 
     if (!isCDP) {
       if (args.login) {
-        await waitForManualLogin(page);
+        await waitForManualLogin(page, context);
         await context.storageState({ path: args.stateFile });
         console.log(`已保存登入態到：${args.stateFile}`);
       } else if (args.stateFile && !fs.existsSync(args.stateFile)) {

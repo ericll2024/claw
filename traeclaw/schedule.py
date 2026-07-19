@@ -17,7 +17,15 @@ TIME_RE = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
 def default_schedule(task: TaskDefinition) -> dict[str, Any]:
     weekdays = list(range(7))
     times: list[str] = []
-    if task.schedule_kind == "daily" and task.time_of_day:
+    if task.schedule_kind == "custom_daily":
+        for h in range(5, 10):
+            for m in range(0, 60, 5):
+                times.append(f"{h:02d}:{m:02d}")
+        times.append("10:00")
+        for h in list(range(0, 5)) + list(range(11, 24)):
+            times.append(f"{h:02d}:00")
+        times.sort()
+    elif task.schedule_kind == "daily" and task.time_of_day:
         times = [task.time_of_day]
     elif task.schedule_kind == "weekly" and task.time_of_day:
         weekdays = list(task.weekdays or tuple(range(7)))
@@ -134,6 +142,9 @@ def due_key(task: TaskDefinition, schedule: dict[str, Any], now: datetime) -> st
             return ""
         hhmm = now.strftime("%H:%M")
         return f"{now.strftime('%Y-%m-%d')}:{hhmm}" if hhmm in set(schedule["times"]) else ""
+    if task.schedule_kind == "custom_daily":
+        hhmm = now.strftime("%H:%M")
+        return f"{now.strftime('%Y-%m-%d')}:{hhmm}" if hhmm in set(schedule.get("times", [])) else ""
     if task.schedule_kind == "daily" and task.time_of_day:
         hhmm = now.strftime("%H:%M")
         return now.strftime("%Y-%m-%d") if hhmm == task.time_of_day else ""

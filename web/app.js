@@ -82,12 +82,6 @@ const taskWorkflows = {
     { title: "发送网络查询", detail: "使用 HTTP POST 携带 API Key 等头信息调用：https://{sensors_api_url}/api/v3/analytics/v1/model/sql/query 传入 SQL 与 limit 行数（默认 100）。" },
     { title: "解析返回行集", detail: "逻辑：解析返回的 JSON 结构，验证是否包含 error 字段。如无错，则获取返回行数 row_count 并解析每一行的字段（columns），将数据传给前端展示。" }
   ],
-  "mfood.order_monitor": [
-    { title: "拉取配置及 Token", detail: "读取配置中的 mFood 登录凭证与神策密钥。并从设置加载 takeout_threshold（外卖阈值，默认 300）及 market_threshold（超市阈值，默认 300）。" },
-    { title: "获取神策订单数", detail: "调用神策 SQL 查询接口统计昨日所有商户在埋点系统中状态为“完成支付/已完成”的事件订单量与实付总额。" },
-    { title: "提取 mFood 账单", detail: "携带 Token 调用 mFood 商家后台接口，抓取对应日期在 mFood 管理后台记录下的真实交易订单笔数和金额。" },
-    { title: "差异校验与通知", detail: "逻辑：计算 |神策订单数 - 后台订单数|。如果差值大于设置的阈值（由配置的外卖和超市阈值决定，默认为 300 笔），则诊断为对账异常，生成对账差异 md 报告并触发 Telegram 报警。" }
-  ],
   "mfood.takeout_business_analysis": [
     { title: "解析店铺配置", detail: "读取 state/mfdb/takeout_business_analysis_check_config.json 中的商户和店铺 ID 列表，并读取 settings 表的全局 Token。" },
     { title: "请求营业数据", detail: "使用 HTTP POST 发送 x-merchant 头，调用接口：https://management-api.mfoodapp.com/merchants/takeouts/analysis/store/order/_business_data 获取指定日期的营业额 totalBusinessAmtn 与实收 receive。" },

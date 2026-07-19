@@ -156,6 +156,31 @@ def decimal_to_str(value):
     return rendered or "0"
 
 
+def format_count(value):
+    if value is None:
+        return "0"
+    try:
+        return f"{int(value):,}"
+    except Exception:
+        return str(value)
+
+
+def format_money(value):
+    if value is None:
+        return "0"
+    try:
+        dec = Decimal(str(value))
+        s = f"{dec:,.2f}"
+        if s.endswith(".00"):
+            s = s[:-3]
+        elif s[-1] == "0" and "." in s:
+            s = s[:-1]
+        return s
+    except Exception:
+        return str(value)
+
+
+
 def api_count(token, resource, date_str, status):
     import hashlib
     import hmac
@@ -323,11 +348,17 @@ def main():
     token = token_payload["token"]
 
     finished_sql = (
-        f"SELECT count(1) AS value FROM events WHERE event = 'FinishedOrder' "
+        "SELECT "
+        "count(1) AS cnt, "
+        "sum(ifnull(cast(order_actual_amount AS DOUBLE), 0)) AS total_amount "
+        "FROM events WHERE event = 'FinishedOrder' "
         f"AND time >= '{date_str} 00:00:00' AND time < '{next_date_str} 00:00:00';"
     )
     mall_sql = (
-        f"SELECT count(1) AS value FROM events WHERE event = 'MallFinishOrder' "
+        "SELECT "
+        "count(1) AS cnt, "
+        "sum(ifnull(cast(order_actual_amount AS DOUBLE), 0)) AS total_amount "
+        "FROM events WHERE event = 'MallFinishOrder' "
         f"AND time >= '{date_str} 00:00:00' AND time < '{next_date_str} 00:00:00';"
     )
     takeout_star_sql = (
@@ -339,8 +370,17 @@ def main():
         f"AND time >= '{date_str} 00:00:00' AND time < '{next_date_str} 00:00:00';"
     )
 
-    shence_finished, finished_retry = retry_call(lambda: shence_count(finished_sql), "shence_finished")
-    shence_mall, mall_retry = retry_call(lambda: shence_count(mall_sql), "shence_mall")
+    finished_row, finished_retry = retry_call(lambda: shence_first_row(finished_sql), "shence_finished")
+    shence_finished = int((finished_row.get("cnt") if isinstance(finished_row, dict) else finished_row[0]) or 0)
+    shence_finished_amount = decimal_to_str(
+        (finished_row.get("total_amount") if isinstance(finished_row, dict) else finished_row[1]) or 0
+    )
+
+    mall_row, mall_retry = retry_call(lambda: shence_first_row(mall_sql), "shence_mall")
+    shence_mall = int((mall_row.get("cnt") if isinstance(mall_row, dict) else mall_row[0]) or 0)
+    shence_mall_amount = decimal_to_str(
+        (mall_row.get("total_amount") if isinstance(mall_row, dict) else mall_row[1]) or 0
+    )
     try:
         star_row, star_retry = retry_call(lambda: shence_first_row(takeout_star_sql), "shence_takeout_star")
         star_order_count = int((star_row.get("cccount") if isinstance(star_row, dict) else star_row[0]) or 0)
@@ -377,6 +417,7 @@ def main():
         "takeouts": {
             "api_count": api_takeouts,
             "shence_count": shence_finished,
+            "shence_amount": shence_finished_amount,
             "diff": diff_takeouts,
             "alert": takeout_alert,
             "star_selected": {
@@ -389,18 +430,25 @@ def main():
         "market": {
             "api_count": api_market,
             "shence_count": shence_mall,
+            "shence_amount": shence_mall_amount,
             "diff": diff_market,
             "alert": market_alert,
         },
         "message": (
-            (
-                f"异常: 外卖差值={diff_takeouts}，超市差值={diff_market}"
-                if status == "alert"
-                else f"正常: 外卖差值={diff_takeouts}，超市差值={diff_market}"
-            )
-            + "\n"
+            f"外賣-----\n"
+            f"後臺訂單數：{format_count(api_takeouts)}\n"
+            f"神策訂單數：{format_count(shence_finished)}\n"
+            f"神策訂單總額：{format_money(shence_finished_amount)}\n"
+            f"差值：{format_count(diff_takeouts)}\n\n"
+            f"超市-----\n"
+            f"後臺訂單數：{format_count(api_market)}\n"
+            f"神策訂單數：{format_count(shence_mall)}\n"
+            f"神策訂單總額：{format_money(shence_mall_amount)}\n"
+            f"超市差值：{format_count(diff_market)}\n\n"
+            f"星選-----\n"
             + (
-                f"星選訂單總數：{star_order_count}\n星選訂單實付總額：{star_order_actual_amount}"
+                f"訂單總數：{format_count(star_order_count)}\n"
+                f"訂單實付總額：{format_money(star_order_actual_amount)}"
                 if star_query_error is None
                 else f"星選訂單統計：查詢失敗（{star_query_error}）"
             )

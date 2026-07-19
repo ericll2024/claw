@@ -6,7 +6,7 @@ from pathlib import Path
 
 # Add project root to python path to import traeclaw modules
 SCRIPT_DIR = Path(__file__).resolve().parent
-PROJECT_ROOT = SCRIPT_DIR.parents[2]
+PROJECT_ROOT = SCRIPT_DIR.parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from traeclaw.db import AppDatabase
@@ -37,13 +37,22 @@ def main():
         groups_file.write_text(groups_content, encoding="utf-8")
     
     try:
-        # Run fb_yesterday_summary.sh with --login
-        sh_script = SCRIPT_DIR / "fb_yesterday_summary.sh"
-        subprocess.run(
-            ["bash", str(sh_script), "--login"],
-            cwd=str(PROJECT_ROOT),
-            check=True
-        )
+        if os.name == 'nt':
+            # On Windows, run the node script directly instead of relying on bash
+            js_script = SCRIPT_DIR / "fb_yesterday_summary.js"
+            subprocess.run(
+                ["node", str(js_script), "--login", "--state-file", str(state_file), "--config", str(groups_file)],
+                cwd=str(PROJECT_ROOT),
+                check=True
+            )
+        else:
+            # On macOS/Linux, run the sh script
+            sh_script = SCRIPT_DIR / "fb_yesterday_summary.sh"
+            subprocess.run(
+                ["bash", str(sh_script), "--login"],
+                cwd=str(PROJECT_ROOT),
+                check=True
+            )
         
         # Read updated state from disk and save to DB
         if state_file.exists():

@@ -27,10 +27,9 @@ TASK_FILE_MAP = {
     "facebook.yesterday_summary": [
         "state/facebook/fb_groups.json",
         "state/facebook/fb_storage_state.json",
+        "state/facebook/fb_last_check.json",
     ],
-    "mfood.order_monitor": [
-        "state/mfdb/order_monitor_config.json",
-    ],
+
     "mfood.maskphone_monitor": [
         "state/mfdb/maskphone_monitor_config.json",
     ],
@@ -128,6 +127,9 @@ class TaskRunner:
                     and isinstance(result_payload, dict)
                     and result_payload.get("status") == "alert"
                 )
+            elif task.id == "mfood.token_check":
+                failures = int(self.db.get_setting("mfood.login.consecutive_failures", "0"))
+                should_notify = (failures >= 3)
             elif trigger_type == "schedule" and only_alert:
                 should_notify = check_run_has_alert(status, summary, result_payload)
 

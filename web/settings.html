@@ -115,6 +115,9 @@
               <div id="mfoodTokenInfo" style="color: var(--muted); font-size: 12px; display: none;">
                 当前 Token: <code id="mfoodCurrentToken" style="background: var(--bg); padding: 2px 6px; border-radius: 4px; font-family: monospace;"></code>
               </div>
+              <div style="color: var(--muted); font-size: 12px;">
+                上次检查时间：<span id="mfoodLastCheckTime">无</span>
+              </div>
             </div>
           </div>
           <div class="form-actions" style="display: flex; gap: 8px;">
@@ -148,7 +151,30 @@
         </form>
 
       </section>
+
+      <section class="panel settings-wide">
+        <div class="section-head">
+          <h2>Facebook</h2>
+          <span id="facebookState" class="badge">未配置</span>
+        </div>
+        <form id="facebookForm" class="form compact-form">
+          <div class="form-group" style="border-bottom: 0; padding-bottom: 0;">
+            <strong>监控群组链接</strong>
+            <div id="facebookGroupsContainer" style="display: flex; flex-direction: column; gap: 8px; margin-top: 8px; margin-bottom: 12px;">
+              <!-- 动态渲染群组列表 -->
+            </div>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <input id="newFacebookGroupUrl" type="text" autocomplete="off" placeholder="输入新的 Facebook 群组链接 (https://www.facebook.com/groups/...)" style="flex: 1;" />
+              <button id="addFacebookGroupBtn" class="button" type="button">添加</button>
+            </div>
+          </div>
+          <div class="form-actions">
+            <button class="button primary" type="submit">保存 Facebook 配置</button>
+          </div>
+        </form>
+      </section>
     </div>
+
   </main>
 
     <!-- Telegram 消息監聽模態彈窗 -->
