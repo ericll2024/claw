@@ -136,18 +136,19 @@ class TraeclawApp:
                 if store_ids and isinstance(store_ids, list):
                     previews.append(f"门店ID: {', '.join(map(str, store_ids))}")
 
-        # 3. Facebook 监控群组
-        groups = data.get("groups")
-        if groups and isinstance(groups, list):
-            group_names_or_ids = []
-            for g in groups:
-                if isinstance(g, str):
-                    g = g.strip("/")
-                    parts = g.split("/")
-                    if parts:
-                        group_names_or_ids.append(parts[-1])
-            if group_names_or_ids:
-                previews.append(f"群组: {', '.join(group_names_or_ids)}")
+        # 3. Facebook 监控群组 (已按用户要求隐藏，不显示群组信息)
+        # groups = data.get("groups")
+        # if groups and isinstance(groups, list):
+        #     group_names_or_ids = []
+        #     for g in groups:
+        #         if isinstance(g, str):
+        #             g = g.strip("/")
+        #             parts = g.split("/")
+        #             if parts:
+        #                 group_names_or_ids.append(parts[-1])
+        #     if group_names_or_ids:
+        #         previews.append(f"群组: {', '.join(group_names_or_ids)}")
+
 
         if previews:
             return " | ".join(previews)
