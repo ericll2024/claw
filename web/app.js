@@ -113,10 +113,10 @@ const taskWorkflows = {
     { title: "双端比对及报警", detail: "逻辑：比对神策和 mFood 的订单数量与实付金额，如果异常差值超出限额，写入 sqlite 监控数据库，并发送 Telegram 对账异常播报。" }
   ],
   "facebook.yesterday_summary": [
-    { title: "读取监测群组", detail: "从 fb_groups.json 加载需要监控的 Facebook 群组链接，并从 fb_storage_state.json 读取原有的 cookies 状态数据。" },
-    { title: "启动 Playwright", detail: "逻辑：使用 Playwright 启动本机的 Google Chrome 浏览器进程，加载原有的 cookies 免登录进入 Facebook 网页。" },
-    { title: "遍历抓取贴文", detail: "逻辑：循环访问各群组页面，滑动页面以动态加载内容。抓取昨日（yesterday 00:00 - 23:59）发布的贴文文本、发布者、点赞及评论数。" },
-    { title: "内容摘要与通知", detail: "逻辑：过滤去重并解析抓取到的贴文文本，调用总结模块生成昨日群活动 md 报告输出到 tmp 文件夹，若配置了 Telegram 机器人则推送汇总消息。" }
+    { title: "读取监测群组", detail: "从 fb_groups.json 加载需要监控的 Facebook 群组链接，并从 fb_last_check.json 读取最后检查时间戳。" },
+    { title: "连接 BrowserSkill", detail: "逻辑：通过 BrowserSkill 与本地 Edge 浏览器建立自动化连接并激活监控标签页。" },
+    { title: "遍历抓取新贴", detail: "逻辑：循环访问各群组页面，滑动页面加载内容，增量抓取自上一次检查时间以来的新贴文本与作者。" },
+    { title: "内容摘要与通知", detail: "逻辑：过滤去重并提取新贴主题与摘要，生成日报报告，若配置了 Telegram 机器人则推送汇总消息。" }
   ]
 };
 

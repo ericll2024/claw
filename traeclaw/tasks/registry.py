@@ -87,10 +87,10 @@ TASK_WORKFLOWS: dict[str, tuple[WorkflowStep, ...]] = {
         ("双端比对及报警", "比对两端差异，异常时写库并推送通知。"),
     ),
     "facebook.yesterday_summary": _steps(
-        ("读取监测群组", "加载 Facebook 群组配置和已有登录态。"),
-        ("启动 Playwright", "启动浏览器并复用 cookies 登录状态。"),
-        ("遍历抓取贴文", "抓取昨日群组贴文、互动数据和内容。"),
-        ("内容摘要与通知", "汇总生成摘要并按需推送 Telegram。"),
+        ("读取监测群组", "从 fb_groups.json 加载要监控的群组，并读取最后检查时间状态。"),
+        ("连接 BrowserSkill", "通过 BrowserSkill CDP 连接并激活本地已登录的 Edge 浏览器标签页。"),
+        ("遍历抓取新贴", "循环访问各群组页面，滑动加载内容，抓取自上一次检查以来的新贴文本。"),
+        ("内容摘要与通知", "提取新贴主题与摘要，生成日报报告，若配置了 Telegram 则推送动态。"),
     ),
     "mfood.token_check": _steps(
         ("读取登录 Token", "从数据库中读取已保存的 mFood Token。"),
@@ -316,9 +316,9 @@ def list_tasks() -> list[TaskDefinition]:
         ),
         TaskDefinition(
             id="facebook.yesterday_summary",
-            name="Facebook 群组昨日摘要",
+            name="Facebook 群组新动态监控",
             group="fb",
-            description="使用 BrowserSkill 自动抓取 Facebook 群组昨日内容并生成摘要。",
+            description="使用 BrowserSkill 自动增量监控 Facebook 群组新发贴文并生成摘要报告。",
             schedule_kind="daily",
             time_of_day="09:00",
             schedule_label="每天 09:00",
