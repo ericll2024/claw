@@ -276,6 +276,8 @@ async function main() {
 
 
   const reportData = [];
+  let anyThrottleOrFailure = false;
+
 
   for (let i = 0; i < groups.length; i++) {
     const url = groups[i];
@@ -366,31 +368,50 @@ async function main() {
           }
         }
 
+        let lastScrollHeight = 0;
+        let scrollHeightsChanged = false;
+
         extractVisible();
 
         while (scrolls < maxScrolls) {
+          lastScrollHeight = document.documentElement.scrollHeight;
           document.documentElement.scrollTop = document.documentElement.scrollHeight;
           window.dispatchEvent(new Event('scroll'));
           document.dispatchEvent(new Event('scroll'));
           await sleep(2500);
+          if (document.documentElement.scrollHeight > lastScrollHeight) {
+            scrollHeightsChanged = true;
+          }
           extractVisible();
           scrolls++;
         }
 
-        resolve(JSON.stringify(Object.values(accumulated)));
+        resolve(JSON.stringify({
+          posts: Object.values(accumulated),
+          scrollHeightsChanged,
+          visibilityState: document.visibilityState
+        }));
       })
     `;
 
 
-    let rawPosts = [];
+    let result = { posts: [], scrollHeightsChanged: false, visibilityState: 'visible' };
     try {
       const postsOutput = runBsk(['evaluate', '--session', sessionId, '--tab-id', tabId, '--timeout', '90s', extractionJs]);
-      rawPosts = JSON.parse(postsOutput);
+      result = JSON.parse(postsOutput);
     } catch (e) {
       console.error('Failed to parse extraction results:', e.message);
     }
 
+    const rawPosts = result.posts || [];
     console.log(`Found ${rawPosts.length} raw posts on the page.`);
+
+    // Check if throttled
+    const isThrottled = (rawPosts.length <= 1) && (!result.scrollHeightsChanged);
+    if (isThrottled) {
+      console.warn(`[Warning] Group page extraction appears to be throttled/minimized (found ${rawPosts.length} posts, scroll height did not change). We will NOT update the last check time for this run.`);
+      anyThrottleOrFailure = true;
+    }
 
     // Filter posts between last check time and current check time
     const filteredPosts = [];
@@ -528,14 +549,19 @@ async function main() {
   summaryTextLines.push(`详细日报已生成，可在看板或日志中查看。`);
   const summary_text = summaryTextLines.join('\n');
 
-  // Write the updated check time back to the sync file
-  try {
-    fs.mkdirSync(path.dirname(lastCheckFile), { recursive: true });
-    fs.writeFileSync(lastCheckFile, JSON.stringify({ last_check_time: currentCheckTime.toISOString() }, null, 2), 'utf8');
-    console.log(`\nUpdated last check time in fb_last_check.json: ${currentCheckTime.toISOString()}`);
-  } catch (e) {
-    console.warn('Failed to write fb_last_check.json:', e.message);
+  if (anyThrottleOrFailure) {
+    console.log('\n[Notice] Last check time was NOT updated because some group extractions were throttled or failed. It will retry catching up in the next run.');
+  } else {
+    // Write the updated check time back to the sync file
+    try {
+      fs.mkdirSync(path.dirname(lastCheckFile), { recursive: true });
+      fs.writeFileSync(lastCheckFile, JSON.stringify({ last_check_time: currentCheckTime.toISOString() }, null, 2), 'utf8');
+      console.log(`\nUpdated last check time in fb_last_check.json: ${currentCheckTime.toISOString()}`);
+    } catch (e) {
+      console.warn('Failed to write fb_last_check.json:', e.message);
+    }
   }
+
 
 
   // Print JSON summary for traeclaw runner to parse
