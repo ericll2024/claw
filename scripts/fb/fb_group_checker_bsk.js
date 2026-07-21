@@ -345,12 +345,24 @@ async function main() {
             const lines = fullText.split('\\n').map(s => s.trim()).filter(Boolean);
             const author = lines[0] || '';
 
-            const timeCandidateEls = [
-              ...card.querySelectorAll('a[aria-label]'),
-              ...card.querySelectorAll('abbr'),
-              ...card.querySelectorAll('span[aria-label]')
-            ];
-            const time = (timeCandidateEls.map(el => el.getAttribute('aria-label') || el.textContent || '').find(Boolean) || '').trim();
+            // Robust text-based time extraction from visual lines
+            let time = '';
+            const dotIdx = lines.findIndex(l => l === '·' || l === '•' || l.startsWith('·') || l.startsWith('•') || l.endsWith('·') || l.endsWith('•'));
+            if (dotIdx > 0) {
+              time = lines[dotIdx - 1];
+            } else if (lines[1] && (lines[1].includes('小时') || lines[1].includes('小時') || lines[1].includes('分钟') || lines[1].includes('分鐘') || lines[1].includes('天') || lines[1].includes('月') || lines[1].includes('年') || lines[1].includes('昨日') || lines[1].includes('昨天') || /\\d/.test(lines[1]))) {
+              time = lines[1];
+            }
+
+            // Fallback to selectors if text parsing is empty
+            if (!time) {
+              const timeCandidateEls = [
+                ...card.querySelectorAll('abbr'),
+                ...card.querySelectorAll('span[aria-label]'),
+                ...card.querySelectorAll('a[aria-label]')
+              ];
+              time = (timeCandidateEls.map(el => el.getAttribute('aria-label') || el.textContent || '').find(Boolean) || '').trim();
+            }
 
             const imageUrls = [...card.querySelectorAll('img[src]')]
               .map(img => img.getAttribute('src') || '')
@@ -555,8 +567,9 @@ async function main() {
     // Write the updated check time back to the sync file
     try {
       fs.mkdirSync(path.dirname(lastCheckFile), { recursive: true });
-      fs.writeFileSync(lastCheckFile, JSON.stringify({ last_check_time: currentCheckTime.toISOString() }, null, 2), 'utf8');
-      console.log(`\nUpdated last check time in fb_last_check.json: ${currentCheckTime.toISOString()}`);
+      fs.writeFileSync(lastCheckFile, JSON.stringify({ last_check_time: endCheckDate.toISOString() }, null, 2), 'utf8');
+      console.log(`\nUpdated last check time in fb_last_check.json: ${endCheckDate.toISOString()}`);
+
     } catch (e) {
       console.warn('Failed to write fb_last_check.json:', e.message);
     }
