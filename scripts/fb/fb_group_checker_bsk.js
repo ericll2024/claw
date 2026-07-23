@@ -418,10 +418,10 @@ async function main() {
     const rawPosts = result.posts || [];
     console.log(`Found ${rawPosts.length} raw posts on the page.`);
 
-    // Check if throttled
-    const isThrottled = (rawPosts.length <= 1) && (!result.scrollHeightsChanged);
+    // Check if throttled (only flag if tab/window is hidden AND scroll height didn't change with <= 1 post)
+    const isThrottled = (result.visibilityState === 'hidden') && (rawPosts.length <= 1) && (!result.scrollHeightsChanged);
     if (isThrottled) {
-      console.warn(`[Warning] Group page extraction appears to be throttled/minimized (found ${rawPosts.length} posts, scroll height did not change). We will NOT update the last check time for this run.`);
+      console.warn(`[Warning] Group page extraction appears to be throttled/minimized (visibilityState: ${result.visibilityState}, found ${rawPosts.length} posts, scroll height did not change). We will NOT update the last check time for this run.`);
       anyThrottleOrFailure = true;
     }
 
