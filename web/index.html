@@ -130,6 +130,14 @@
           <button id="closeConfigModalBtn" class="modal-close-btn" type="button">&times;</button>
         </div>
         <form id="configForm" style="padding: 20px; display: flex; flex-direction: column; gap: 12px; text-align: left;">
+          <div id="toolSelectContainer" style="display: none; flex-direction: column; gap: 6px;">
+            <label for="taskToolSelect" style="font-size: 13px; font-weight: 600; color: #2b3542;">网页抓取工具 (Web Scraping Tool):</label>
+            <select id="taskToolSelect" style="padding: 8px 12px; font-size: 13px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: #2b3542;">
+              <option value="ego-browser">ego-browser (Ego Browser 自动化工具)</option>
+              <option value="bsk">bsk (BrowserSkill 自动化工具)</option>
+              <option value="playwright">playwright (Playwright 独立浏览器)</option>
+            </select>
+          </div>
           <div style="font-size: 13px; color: var(--muted); line-height: 1.4;">
             您可以直接在下方以 JSON 格式编辑此子任务的外部配置（例如商户 ID、门店 ID 等）：
           </div>

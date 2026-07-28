@@ -31,6 +31,8 @@ const configForm = document.querySelector("#configForm");
 const closeConfigModalBtn = document.querySelector("#closeConfigModalBtn");
 const cancelConfigBtn = document.querySelector("#cancelConfigBtn");
 const saveConfigBtn = document.querySelector("#saveConfigBtn");
+const toolSelectContainer = document.querySelector("#toolSelectContainer");
+const taskToolSelect = document.querySelector("#taskToolSelect");
 let activeConfigTaskId = null;
 
 const runConfirmModal = document.querySelector("#runConfirmModal");
@@ -900,6 +902,13 @@ async function openConfigModal(taskId) {
   configTextarea.value = "正在加载配置...";
   configTextarea.disabled = true;
   saveConfigBtn.disabled = true;
+
+  if (toolSelectContainer && (taskId === "facebook.yesterday_summary" || taskId.startsWith("facebook."))) {
+    toolSelectContainer.style.display = "flex";
+  } else if (toolSelectContainer) {
+    toolSelectContainer.style.display = "none";
+  }
+
   configModal.classList.add("show");
 
   try {
@@ -909,6 +918,11 @@ async function openConfigModal(taskId) {
       saveConfigBtn.disabled = false;
       try {
         const parsed = JSON.parse(payload.config_content);
+        if (taskToolSelect && parsed.tool) {
+          taskToolSelect.value = parsed.tool;
+        } else if (taskToolSelect) {
+          taskToolSelect.value = "ego-browser";
+        }
         configTextarea.value = JSON.stringify(parsed, null, 2);
       } catch (e) {
         configTextarea.value = payload.config_content;
@@ -928,6 +942,9 @@ async function openConfigModal(taskId) {
 function closeConfigModal() {
   configModal.classList.remove("show");
   configTextarea.value = "";
+  if (toolSelectContainer) {
+    toolSelectContainer.style.display = "none";
+  }
   activeConfigTaskId = null;
 }
 
@@ -1534,6 +1551,19 @@ if (configForm) {
       saveConfigBtn.disabled = false;
       saveConfigBtn.textContent = "保存配置";
     });
+  });
+}
+
+if (taskToolSelect) {
+  taskToolSelect.addEventListener("change", () => {
+    try {
+      let parsed = {};
+      try {
+        parsed = JSON.parse(configTextarea.value);
+      } catch (e) {}
+      parsed.tool = taskToolSelect.value;
+      configTextarea.value = JSON.stringify(parsed, null, 2);
+    } catch (e) {}
   });
 }
 

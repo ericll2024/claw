@@ -627,10 +627,12 @@ class TraeclawApp:
             except Exception:
                 pass
         
+        tool = "ego-browser"
         if content:
             try:
                 data = json.loads(content)
                 groups = data.get("groups", [])
+                tool = data.get("tool", "ego-browser")
             except Exception:
                 groups = []
         else:
@@ -641,6 +643,7 @@ class TraeclawApp:
             ]
         
         return {
+            "tool": tool,
             "groups": groups,
             "configured": len(groups) > 0
         }
@@ -648,7 +651,8 @@ class TraeclawApp:
     def save_facebook_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
         import json
         groups = payload.get("groups", [])
-        content = json.dumps({"groups": groups}, indent=2)
+        tool = payload.get("tool", "ego-browser")
+        content = json.dumps({"tool": tool, "groups": groups}, indent=2)
         self.db.set_setting("file:state/facebook/fb_groups.json", content)
         
         try:
