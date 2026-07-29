@@ -664,6 +664,20 @@ class TraeclawApp:
             
         return self.get_facebook_settings()
 
+    def get_browser_settings(self) -> dict[str, Any]:
+        fb = self.get_facebook_settings()
+        return {
+            "tool": fb.get("tool", "ego-browser"),
+            "configured": True
+        }
+
+    def save_browser_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
+        tool = payload.get("tool", "ego-browser")
+        fb = self.get_facebook_settings()
+        fb["tool"] = tool
+        self.save_facebook_settings(fb)
+        return self.get_browser_settings()
+
 
 
 

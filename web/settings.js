@@ -592,7 +592,36 @@ listenerModal.addEventListener("click", async (event) => {
   }
 });
 
-Promise.all([loadTelegram(), loadAiSettings(), loadMFood()]).catch(showError);
+// Browser Scraping Tool Settings Logic
+const browserToolForm = document.querySelector("#browserToolForm");
+const browserToolState = document.querySelector("#browserToolState");
+const settingsBrowserToolSelect = document.querySelector("#settingsBrowserToolSelect");
+
+async function loadBrowserSettings() {
+  const payload = await api("/api/settings/browser");
+  if (settingsBrowserToolSelect && payload.settings?.tool) {
+    settingsBrowserToolSelect.value = payload.settings.tool;
+  }
+}
+
+if (browserToolForm) {
+  browserToolForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    api("/api/settings/browser", {
+      method: "POST",
+      body: JSON.stringify({
+        tool: settingsBrowserToolSelect.value
+      })
+    })
+      .then(() => {
+        showToast("网页抓取工具设置保存成功", "success");
+        return loadBrowserSettings();
+      })
+      .catch(showError);
+  });
+}
+
+Promise.all([loadTelegram(), loadAiSettings(), loadMFood(), loadBrowserSettings()]).catch(showError);
 
 
 const logoutBtn = document.querySelector("#logoutBtn");

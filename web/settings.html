@@ -151,6 +151,29 @@
         </form>
 
       </section>
+
+      <section class="panel settings-wide">
+        <div class="section-head">
+          <h2>网页抓取工具设置</h2>
+          <span id="browserToolState" class="badge success">已配置</span>
+        </div>
+        <form id="browserToolForm" class="form compact-form">
+          <div class="form-group" style="border-bottom: 0; padding-bottom: 0;">
+            <label for="settingsBrowserToolSelect"><strong>默认网页抓取工具 (Default Web Scraping Tool)</strong></label>
+            <select id="settingsBrowserToolSelect" style="width: 100%; padding: 8px 12px; margin-top: 8px; margin-bottom: 8px; font-size: 13px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text);">
+              <option value="ego-browser">ego-browser (Ego Browser 自动化工具)</option>
+              <option value="bsk">bsk (BrowserSkill 自动化工具)</option>
+              <option value="playwright">playwright (Playwright 独立浏览器)</option>
+            </select>
+            <div style="font-size: 12px; color: var(--muted); line-height: 1.4;">
+              选择系统进行网页动态监控及数据抓取时使用的默认浏览器自动化引擎工具。
+            </div>
+          </div>
+          <div class="form-actions" style="margin-top: 12px;">
+            <button class="button primary" type="submit">保存抓取工具设置</button>
+          </div>
+        </form>
+      </section>
     </div>
 
   </main>

@@ -160,6 +160,9 @@ class TraeclawRequestHandler(BaseHTTPRequestHandler):
         if path == "/api/settings/facebook":
             self.write_json({"settings": self.app.get_facebook_settings()})
             return
+        if path == "/api/settings/browser":
+            self.write_json({"settings": self.app.get_browser_settings()})
+            return
 
         self.serve_static(path)
 
@@ -344,6 +347,11 @@ class TraeclawRequestHandler(BaseHTTPRequestHandler):
         if path == "/api/settings/facebook":
             payload = self.read_json()
             settings = self.app.save_facebook_settings(payload)
+            self.write_json({"settings": settings})
+            return
+        if path == "/api/settings/browser":
+            payload = self.read_json()
+            settings = self.app.save_browser_settings(payload)
             self.write_json({"settings": settings})
             return
 
