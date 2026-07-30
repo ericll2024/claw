@@ -228,51 +228,6 @@ async function main() {
     }
 
     console.log(`\n[${i+1}/${groups.length}] Navigating via ${tool}: ${targetUrl}`);
-    runBrowserTool(tool, ['navigate', '--session', sessionId, '--tab-id', String(tabId), '--timeout', '90s', targetUrl]);
-    await sleep(6000);
-
-    let title = runBrowserTool(tool, ['evaluate', '--session', sessionId, '--tab-id', String(tabId), 'document.title']);
-    const groupName = title.replace(/\(\d+\+\)\s*/, '').split('|')[0].replace(/#|@/g, '').trim();
-    console.log(`Group Name: ${groupName}`);
-
-    const extractionJs = `
-      new Promise(async (resolve) => {
-        const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-        const accumulated = {};
-        let scrolls = 0;
-        let maxScrolls = 8;
-
-        function text(el) {
-          if (!el) return '';
-          let clone = el.cloneNode(true);
-          clone.querySelectorAll('script, style, svg').forEach(s => s.remove());
-          return clone.innerText || clone.textContent || '';
-        }
-
-        function firstMatch(arr, fn) {
-          for (const item of arr) {
-            if (fn(item)) return item;
-          }
-          return null;
-        }
-
-        function extractVisible() {
-          const cards = [...document.querySelectorAll('[role="article"]')];
-          for (const card of cards) {
-            if (card.querySelector('[role="status"]') || card.getAttribute('data-visualcompletion') === 'loading-state') {
-              continue;
-            }
-
-            const fullText = text(card);
-            if (!fullText) continue;
-
-            const links = [...card.querySelectorAll('a[href]')];
-            const postA = firstMatch(links, (a) => {
-              const href = a.href || '';
-              return /\\/groups\\/\\d+\\/(?:permalink|posts)\\//.test(href) && !href.includes('comment_id=');
-            }) || firstMatch(links, (a) => /\\/posts\\//.test(a.href || ''));
-
-            const url = postA?.href || '';
             const idMatch = url.match(/(?:posts|permalink)\\/(\\d+)/);
             const id = idMatch?.[1] || url || fullText.substring(0, 50);
 

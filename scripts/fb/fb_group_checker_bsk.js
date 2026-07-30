@@ -303,158 +303,164 @@ async function main() {
     }
     
     console.log(`\n[${i+1}/${groups.length}] Navigating to: ${targetUrl}`);
-    runBsk(['navigate', '--session', sessionId, '--tab-id', tabId, '--timeout', '90s', targetUrl]);
-    await sleep(6000); // wait for load
 
-    // Get title
-    let title = runBsk(['evaluate', '--session', sessionId, '--tab-id', tabId, 'document.title']);
-    const groupName = title.replace(/\(\d+\+\)\s*/, '').split('|')[0].replace(/#|@/g, '').trim();
-    console.log(`Group Name: ${groupName}`);
-
-    const extractionJs = `
-      new Promise(async (resolve) => {
-        const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-        
-        const accumulated = {};
-        let scrolls = 0;
-        let maxScrolls = 8;
-
-        function text(el) {
-          return (el?.innerText || '').replace(/\\n{3,}/g, '\\n\\n').trim();
-        }
-
-        function firstMatch(elements, predicate) {
-          for (const el of elements) {
-            try {
-              if (predicate(el)) return el;
-            } catch (_) {}
-          }
-          return null;
-        }
-
-        function extractVisible() {
-          const cards = [...document.querySelectorAll('[role="article"]')];
-          for (const card of cards) {
-            if (card.querySelector('[role="status"]') || card.getAttribute('data-visualcompletion') === 'loading-state') {
-              continue;
-            }
-
-            const fullText = text(card);
-            if (!fullText) continue;
-
-            const links = [...card.querySelectorAll('a[href]')];
-            const postA = firstMatch(links, (a) => {
-              const href = a.href || '';
-              return /\\/groups\\/\\d+\\/(?:permalink|posts)\\//.test(href) && !href.includes('comment_id=');
-            }) || firstMatch(links, (a) => /\\/posts\\//.test(a.href || ''));
-
-            const url = postA?.href || '';
-            const idMatch = url.match(/(?:posts|permalink)\\/(\\d+)/);
-            const id = idMatch?.[1] || url || fullText.substring(0, 50);
-            
-            if (accumulated[id]) continue;
-
-            const lines = fullText.split('\\n').map(s => s.trim()).filter(Boolean);
-            const author = lines[0] || '';
-
-            // Robust text-based time extraction from visual lines
-            let time = '';
-            const dotIdx = lines.findIndex(l => l === '·' || l === '•' || l.startsWith('·') || l.startsWith('•') || l.endsWith('·') || l.endsWith('•'));
-            if (dotIdx > 0) {
-              time = lines[dotIdx - 1];
-            } else if (lines[1] && (lines[1].includes('小时') || lines[1].includes('小時') || lines[1].includes('分钟') || lines[1].includes('分鐘') || lines[1].includes('天') || lines[1].includes('月') || lines[1].includes('年') || lines[1].includes('昨日') || lines[1].includes('昨天') || /\\d/.test(lines[1]))) {
-              time = lines[1];
-            }
-
-            // Fallback to selectors if text parsing is empty
-            if (!time) {
-              const timeCandidateEls = [
-                ...card.querySelectorAll('abbr'),
-                ...card.querySelectorAll('span[aria-label]'),
-                ...card.querySelectorAll('a[aria-label]')
-              ];
-              time = (timeCandidateEls.map(el => el.getAttribute('aria-label') || el.textContent || '').find(Boolean) || '').trim();
-            }
-
-            const imageUrls = [...card.querySelectorAll('img[src]')]
-              .map(img => img.getAttribute('src') || '')
-              .filter(src => src && !src.startsWith('data:'));
-
-            accumulated[id] = {
-              id,
-              url,
-              author,
-              time,
-              fullText,
-              textLines: lines.slice(0, 15),
-              imageCount: imageUrls.length,
-            };
-          }
-        }
-
-        let lastScrollHeight = 0;
-        let scrollHeightsChanged = false;
-
-        extractVisible();
-
-        while (scrolls < maxScrolls) {
-          lastScrollHeight = document.documentElement.scrollHeight;
-          document.documentElement.scrollTop = document.documentElement.scrollHeight;
-          window.dispatchEvent(new Event('scroll'));
-          document.dispatchEvent(new Event('scroll'));
-          await sleep(2500);
-          if (document.documentElement.scrollHeight > lastScrollHeight) {
-            scrollHeightsChanged = true;
-          }
-          extractVisible();
-          scrolls++;
-        }
-
-        resolve(JSON.stringify({
-          posts: Object.values(accumulated),
-          scrollHeightsChanged,
-          visibilityState: document.visibilityState
-        }));
-      })
-    `;
-
-
-    let result = { posts: [], scrollHeightsChanged: false, visibilityState: 'visible' };
     try {
-      const postsOutput = runBsk(['evaluate', '--session', sessionId, '--tab-id', tabId, '--timeout', '90s', extractionJs]);
-      result = JSON.parse(postsOutput);
-    } catch (e) {
-      console.error('Failed to parse extraction results:', e.message);
-    }
+      runBsk(['navigate', '--session', sessionId, '--tab-id', tabId, '--timeout', '90s', targetUrl]);
+      await sleep(6000); // wait for load
 
-    const rawPosts = result.posts || [];
-    console.log(`Found ${rawPosts.length} raw posts on the page.`);
+      // Get title
+      let title = runBsk(['evaluate', '--session', sessionId, '--tab-id', tabId, 'document.title']);
+      const groupName = title.replace(/\(\d+\+\)\s*/, '').split('|')[0].replace(/#|@/g, '').trim();
+      console.log(`Group Name: ${groupName}`);
 
-    // Check if throttled (only flag if tab/window is hidden AND scroll height didn't change with <= 1 post)
-    const isThrottled = (result.visibilityState === 'hidden') && (rawPosts.length <= 1) && (!result.scrollHeightsChanged);
-    if (isThrottled) {
-      console.warn(`[Warning] Group page extraction appears to be throttled/minimized (visibilityState: ${result.visibilityState}, found ${rawPosts.length} posts, scroll height did not change). We will NOT update the last check time for this run.`);
+      const extractionJs = `
+        new Promise(async (resolve) => {
+          const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+          
+          const accumulated = {};
+          let scrolls = 0;
+          let maxScrolls = 8;
+
+          function text(el) {
+            return (el?.innerText || '').replace(/\\n{3,}/g, '\\n\\n').trim();
+          }
+
+          function firstMatch(elements, predicate) {
+            for (const el of elements) {
+              try {
+                if (predicate(el)) return el;
+              } catch (_) {}
+            }
+            return null;
+          }
+
+          function extractVisible() {
+            const cards = [...document.querySelectorAll('[role="article"]')];
+            for (const card of cards) {
+              if (card.querySelector('[role="status"]') || card.getAttribute('data-visualcompletion') === 'loading-state') {
+                continue;
+              }
+
+              const fullText = text(card);
+              if (!fullText) continue;
+
+              const links = [...card.querySelectorAll('a[href]')];
+              const postA = firstMatch(links, (a) => {
+                const href = a.href || '';
+                return /\\/groups\\/\\d+\\/(?:permalink|posts)\\//.test(href) && !href.includes('comment_id=');
+              }) || firstMatch(links, (a) => /\\/posts\\//.test(a.href || ''));
+
+              const url = postA?.href || '';
+              const idMatch = url.match(/(?:posts|permalink)\\/(\\d+)/);
+              const id = idMatch?.[1] || url || fullText.substring(0, 50);
+              
+              if (accumulated[id]) continue;
+
+              const lines = fullText.split('\\n').map(s => s.trim()).filter(Boolean);
+              const author = lines[0] || '';
+
+              // Robust text-based time extraction from visual lines
+              let time = '';
+              const dotIdx = lines.findIndex(l => l === '·' || l === '•' || l.startsWith('·') || l.startsWith('•') || l.endsWith('·') || l.endsWith('•'));
+              if (dotIdx > 0) {
+                time = lines[dotIdx - 1];
+              } else if (lines[1] && (lines[1].includes('小时') || lines[1].includes('小時') || lines[1].includes('分钟') || lines[1].includes('分鐘') || lines[1].includes('天') || lines[1].includes('月') || lines[1].includes('年') || lines[1].includes('昨日') || lines[1].includes('昨天') || /\\d/.test(lines[1]))) {
+                time = lines[1];
+              }
+
+              // Fallback to selectors if text parsing is empty
+              if (!time) {
+                const timeCandidateEls = [
+                  ...card.querySelectorAll('abbr'),
+                  ...card.querySelectorAll('span[aria-label]'),
+                  ...card.querySelectorAll('a[aria-label]')
+                ];
+                time = (timeCandidateEls.map(el => el.getAttribute('aria-label') || el.textContent || '').find(Boolean) || '').trim();
+              }
+
+              const imageUrls = [...card.querySelectorAll('img[src]')]
+                .map(img => img.getAttribute('src') || '')
+                .filter(src => src && !src.startsWith('data:'));
+
+              accumulated[id] = {
+                id,
+                url,
+                author,
+                time,
+                fullText,
+                textLines: lines.slice(0, 15),
+                imageCount: imageUrls.length,
+              };
+            }
+          }
+
+          let lastScrollHeight = 0;
+          let scrollHeightsChanged = false;
+
+          extractVisible();
+
+          while (scrolls < maxScrolls) {
+            lastScrollHeight = document.documentElement.scrollHeight;
+            document.documentElement.scrollTop = document.documentElement.scrollHeight;
+            window.dispatchEvent(new Event('scroll'));
+            document.dispatchEvent(new Event('scroll'));
+            await sleep(2500);
+            if (document.documentElement.scrollHeight > lastScrollHeight) {
+              scrollHeightsChanged = true;
+            }
+            extractVisible();
+            scrolls++;
+          }
+
+          resolve(JSON.stringify({
+            posts: Object.values(accumulated),
+            scrollHeightsChanged,
+            visibilityState: document.visibilityState
+          }));
+        })
+      `;
+
+
+      let result = { posts: [], scrollHeightsChanged: false, visibilityState: 'visible' };
+      try {
+        const postsOutput = runBsk(['evaluate', '--session', sessionId, '--tab-id', tabId, '--timeout', '90s', extractionJs]);
+        result = JSON.parse(postsOutput);
+      } catch (e) {
+        console.error('Failed to parse extraction results:', e.message);
+      }
+
+      const rawPosts = result.posts || [];
+      console.log(`Found ${rawPosts.length} raw posts on the page.`);
+
+      // Check if throttled (only flag if tab/window is hidden AND scroll height didn't change with <= 1 post)
+      const isThrottled = (result.visibilityState === 'hidden') && (rawPosts.length <= 1) && (!result.scrollHeightsChanged);
+      if (isThrottled) {
+        console.warn(`[Warning] Group page extraction appears to be throttled/minimized (visibilityState: ${result.visibilityState}, found ${rawPosts.length} posts, scroll height did not change). We will NOT update the last check time for this run.`);
+        anyThrottleOrFailure = true;
+      }
+
+      // Filter posts between last check time and current check time
+      const filteredPosts = [];
+      for (const post of rawPosts) {
+        const postDate = parseTimeToDate(post.time, currentCheckTime);
+        if (postDate && postDate >= lastCheckDate && postDate <= endCheckDate) {
+          filteredPosts.push({
+            ...post,
+            postDate: postDate.toISOString()
+          });
+        }
+      }
+
+      console.log(`Filtered: ${filteredPosts.length} new posts since ${lastCheckDate.toISOString()}`);
+      reportData.push({
+        groupName,
+        url,
+        posts: filteredPosts
+      });
+    } catch (err) {
+      console.error(`[Error] Group processing failed for ${url}: ${err.message}`);
       anyThrottleOrFailure = true;
     }
-
-    // Filter posts between last check time and current check time
-    const filteredPosts = [];
-    for (const post of rawPosts) {
-      const postDate = parseTimeToDate(post.time, currentCheckTime);
-      if (postDate && postDate >= lastCheckDate && postDate <= endCheckDate) {
-        filteredPosts.push({
-          ...post,
-          postDate: postDate.toISOString()
-        });
-      }
-    }
-
-    console.log(`Filtered: ${filteredPosts.length} new posts since ${lastCheckDate.toISOString()}`);
-    reportData.push({
-      groupName,
-      url,
-      posts: filteredPosts
-    });
   }
 
   // Generate markdown report
